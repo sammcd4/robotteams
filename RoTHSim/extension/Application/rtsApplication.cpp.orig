@@ -1,0 +1,3642 @@
+//---------------------------------------------------------------------------
+#include "rtsApplication.h"
+//---------------------------------------------------------------------------
+
+//===========================================================================
+/*!
+    Constructor of rtsApplication.
+
+    \fn     rtsApplication::rtsApplication()
+    \param  a_
+*/
+//===========================================================================
+rtsApplication::rtsApplication()
+{
+	// initialize
+	initApplication();
+}
+
+rtsApplication::~rtsApplication()
+{
+    deleteAndNullAllPointers();
+}
+
+void rtsApplication::initApplication()
+{
+
+	//------------------------------------------------------------------------------
+	// SERVER VARIABLES
+	//------------------------------------------------------------------------------
+
+	// enable query mutex
+	m_enableQueryMutex = false;
+
+	m_swarmModeInt = 0;
+
+	// minimum agent distance
+	m_AIRadius = 25.0;
+	m_swarmRadius = 0;
+
+	// manipulation flag for server
+	m_serverManipButton = false;
+
+	// manipulation completed flag for server
+	m_serverManipCompleted = false;
+
+	// patrol variables
+	m_serverPatrolCommanded = false;
+	m_serverPatrolDir1.zero();
+	m_serverPatrolDir2.zero();
+	m_commandedPatrolDir1.zero();
+	m_commandedPatrolDir2.zero();
+	m_patrolCount = 0;
+
+	// radius variables
+	m_radiusPriority = 0;
+	m_serverAIRadius = m_AIRadius;
+
+
+
+	//------------------------------------------------------------------------------
+	// ROBOT TEAM VARIABLES
+	//------------------------------------------------------------------------------
+
+	// manipulation completed
+	m_manipCompleted = false;
+
+
+
+
+	//------------------------------------------------------------------------------
+	// HAPTICS VARIABLES
+	//------------------------------------------------------------------------------
+
+	// distribution type variable (0 - patrol, 1 - cordon)
+	m_distributionType = 0;
+
+	// resize percentage
+	m_resizePercentage = 1.00;
+
+
+	//------------------------------------------------------------------------------
+	// TOOL VARIABLES
+	//------------------------------------------------------------------------------
+
+	// number of haptic devices detected
+	m_numHapticDevices = 0;
+
+
+
+	//------------------------------------------------------------------------------
+	// GRAVITY WELL VARIABLES
+	//------------------------------------------------------------------------------
+
+	// enabler for gravity well mutex
+	m_enableGWMutex = false;
+
+	// gw monitor for gw thread
+	m_gwMonitor = false;
+
+	// contact state for gw thread
+	m_gwContactState = false;
+
+	// previous contact state for gw thread
+	m_gwPrevContactState = false;
+
+	// enable gravity well thread variables
+	m_enableGWThreadVariables = false;
+
+
+
+	//------------------------------------------------------------------------------
+	// DATA VARIABLES
+	//------------------------------------------------------------------------------
+
+	// enabler for data mutex
+	m_enableDataMutex = false;
+
+	// time intervals for each iteration
+	m_checkTimeIntervals = true;
+
+	// check time interval of specific regions
+	m_checkRegions = true;
+
+
+
+
+	//------------------------------------------------------------------------------
+	// WORLD VARIABLES
+	//------------------------------------------------------------------------------
+
+	// indicates if the haptic simulation currently running
+	m_simulationRunning = false;
+
+	// indicates if the haptic simulation has terminated
+	m_simulationFinished = true;
+
+
+
+	//------------------------------------------------------------------------------
+	// DECLARED MACROS
+	//------------------------------------------------------------------------------
+
+	// convert to resource path
+	#define RESOURCE_PATH(p)    (char*)((m_resourceRoot+string(p)).c_str())
+
+}
+
+bool rtsApplication::initMain(int argc, char* argv[], int hqWindowW, int hqWindowH)
+{
+	//-----------------------------------------------------------------------
+	// INITIALIZATION
+	//-----------------------------------------------------------------------
+
+	// data manager
+	//std::cout << "Please enter input file: ";
+	string inputFile;
+	//std::cin >> inputFile;
+	std::cout << std::endl;
+	inputFile = "four.txt";
+	inputFile = "../../inputs/" + inputFile;
+
+	//std::cout << "Please enter output file: ";
+	string outputFile;
+	//std::cin >> outputFile;
+	std::cout << std::endl;
+	outputFile = "output.txt";
+	outputFile = "../../outputs/" + outputFile;
+
+	m_dataManager = new cDataManager(inputFile, outputFile);
+
+	// create mutex for data manager
+	m_dataMutex = new std::mutex;
+	m_dataManager->setMutex(m_dataMutex);
+
+	// read in server input file name
+	string serverInputFile;
+	string temp;
+	*m_dataManager->getFin() >> temp >> serverInputFile;
+
+	// read in number of buildings
+	int numBuildings;
+	*m_dataManager->getFin() >> temp >> numBuildings;
+
+	// read in hq feed folder
+	string feedFolder;
+	*m_dataManager->getFin() >> temp >> feedFolder;
+
+	// read in camera height in world
+	double cameraHeight;
+	*m_dataManager->getFin() >> temp >> cameraHeight;
+
+	// read in workspace scale factor for device
+	*m_dataManager->getFin() >> temp >> m_virtualWorkspaceRadius;
+
+	// read in sample rate
+	double sampleRate;
+	*m_dataManager->getFin() >> temp >> sampleRate;
+	m_dataManager->setSampleRate(sampleRate);
+
+	// start the server program
+	ShellExecute(
+			NULL,
+			"runas", "start.exe",
+			serverInputFile.c_str(),
+			" ",
+			SW_SHOWDEFAULT);
+
+	// create server communicator
+	m_com = new communicator("localhost");
+
+	// create mutex for gravity well creation
+	if (m_useGravityWells)
+	{
+		m_gwMutex = new std::mutex;
+	}
+
+	// verify server connection
+	if (!m_com->is_valid()) {
+		printf("couldn't connect to server!\n");
+
+		system("pause");
+
+		return false;
+	}
+
+	// pause server until simulation starts
+	m_com->pause();
+
+	// retrieve swarm from server for a first time
+	m_swarm = m_com->swarm();
+
+	// create query mutex
+	m_queryMutex = new std::mutex;
+
+	// read AI Radius from server
+	m_swarmRadius = m_com->swarm()->radius();
+	m_AIRadius = m_swarmRadius;
+
+	// user instructions
+	printf("\n");
+	printf("-----------------------------------\n");
+	printf("Demo: Robot Team Haptics\n");
+	printf("-----------------------------------\n");
+	printf("\n\n");
+	printf("Keyboard Options:\n\n");
+	printf("[b] - Begin Simulation\n");
+	printf("[f] - Toggle full screen\n");
+	printf("[2] - Patrol and Cordon Mode\n");
+	printf("[3] - Toggle show playdoh\n");
+	printf("[4] - Toggle haptic effect on playdoh\n");
+	printf("[5] - Toggle show robot team\n");
+	printf("\nDevice buttons:\n\n");
+	printf("[left] Adjust Agent Radius\n");
+	printf("[middle] Manipulate Cordon Distribution\n");
+	printf("[top] Command Patrol\n");
+	printf("\n\n");
+
+	// parse first arg to try and locate resources
+	m_resourceRoot = string(argv[0]).substr(0, string(argv[0]).find_last_of("/\\") + 1);
+
+
+
+
+
+	//--------------------------------------------------------------------------
+	// WORLD - CAMERA - LIGHTING FOR HQ FEED
+	//--------------------------------------------------------------------------
+
+	// create world for HQ feed
+	m_worldHQ = new cWorld();
+
+	// set the background color of the environment
+	m_worldHQ->m_backgroundColor.setGray();
+
+	// create a camera and insert it into the virtual world
+	m_cameraHQ = new cCamera(m_worldHQ);
+	m_worldHQ->addChild(m_cameraHQ);
+
+	// position and oriente the camera
+	m_cameraHQ->set(cVector3d(0.0, 0.0, 1.0),    // camera position (eye)
+		cVector3d(0.0, 0.0, 0.0),    // lookat position (target)
+		cVector3d(0.0, 1.0, 0.0));   // direction of the "up" vector
+
+	m_cameraHQ->setClippingPlanes(0.01, 100);
+
+	// create a light source
+	m_lightHQ = new cDirectionalLight(m_worldHQ);
+
+	// add light to world
+	m_worldHQ->addChild(m_lightHQ);
+
+	// enable light source
+	m_lightHQ->setEnabled(true);
+
+	// define the direction of the light beam
+	m_lightHQ->setDir(-1.0, -1.0, -1.0);
+
+	// set lighting conditions
+	m_lightHQ->m_ambient.set(0.4f, 0.4f, 0.4f);
+	m_lightHQ->m_diffuse.set(0.8f, 0.8f, 0.8f);
+	m_lightHQ->m_specular.set(1.0f, 1.0f, 1.0f);
+
+
+
+
+	//--------------------------------------------------------------------------
+	// WORLD - CAMERA - LIGHTING
+	//--------------------------------------------------------------------------
+
+	// create a new world.
+	m_world = new cWorld();
+
+	// set the background color of the environment
+	m_world->m_backgroundColor.setGray();
+
+	// create a camera and insert it into the virtual world
+	m_camera = new cCamera(m_world);
+	m_world->addChild(m_camera);
+
+	// position and oriente the camera
+	m_camera->set(cVector3d(0.0, 0.0, cameraHeight),    // camera position (eye)
+		cVector3d(0.0, 0.0, 0.0),    // lookat position (target)
+		cVector3d(0.0, 1.0, 0.0));   // direction of the "up" vector
+
+	// position camera projection sphere
+	m_cameraProjSphere = new cShapeSphere(1.0);
+	m_camera->addChild(m_cameraProjSphere);
+	cVector3d camProjVec = m_camera->getLocalPos();
+
+	// orient camera projection sphere
+	camProjVec.z(camProjVec.y());				// account for rotation of camera reference frame
+	camProjVec.x(camProjVec.x() - cameraHeight); // project the camera position onto the ground
+	m_cameraProjSphere->setLocalPos(camProjVec);
+	m_cameraProjSphere->setShowEnabled(false, false);
+
+	// set the near and far clipping planes of the camera
+	// anything in front/behind these clipping planes will not be rendered
+	double clipDist = 0.25*cameraHeight;
+	double closeDist = -(cameraHeight + clipDist);
+	double farDist = (cameraHeight + clipDist);
+	m_camera->setClippingPlanes(closeDist, farDist);
+
+
+	// set orthographic camera mode
+	//if (stereoMode == C_STEREO_DISABLED)
+	//{
+	//	camera->setOrthographicView(1.3);
+	//}
+	m_camera->setOrthographicView(3 * m_virtualWorkspaceRadius);
+
+
+	// set stereo mode
+	//m_camera->setStereoMode(stereoMode);
+
+	//// set stereo eye separation and focal length (applies only if stereo is enabled)
+	//m_camera->setStereoEyeSeparation(0.01);
+	//m_camera->setStereoFocalLength(0.5);
+
+	// set vertical mirrored display mode
+	//m_camera->setMirrorVertical(mirroredDisplay);
+
+	// disable multi-pass rendering to handle transparent objects
+	m_camera->setUseMultipassTransparency(true);
+
+	// create a light source
+	m_light = new cDirectionalLight(m_world);
+
+	// add light to world
+	m_world->addChild(m_light);
+
+	// enable light source
+	m_light->setEnabled(true);
+
+	//light->setLocalPos(cVector3d(2.0*cameraHeight, 0.5*cameraHeight, 1.0*cameraHeight));  // position the light source
+
+	// define the direction of the light beam
+	m_light->setDir(-1.0, 0.0, 0.0);
+
+
+
+	//--------------------------------------------------------------------------
+	// HAPTIC DEVICES / TOOLS
+	//--------------------------------------------------------------------------
+
+	// device radius
+	m_deviceRadius = 0.1*m_virtualWorkspaceRadius;
+
+	// create a haptic device handler
+	m_handler = new cHapticDeviceHandler();
+
+	// get access to the first available haptic device
+	m_handler->getDevice(m_hapticDevice, 0);
+
+	// get number of haptic devices
+	m_numHapticDevices = m_handler->getNumDevices();
+
+	// retrieve information about the current haptic device
+	cHapticDeviceInfo hapticDeviceInfo = m_hapticDevice->getSpecifications();
+
+	// create a tool (cursor) and insert into the world
+	m_tool = new cToolCursor(m_world);
+	m_cameraProjSphere->addChild(m_tool);
+
+	// connect the haptic device to the tool
+	m_tool->setHapticDevice(m_hapticDevice);
+
+	// define a radius for the tool
+	double toolRadius = 0.1;
+
+	// set tool radius
+	m_tool->setRadius(m_deviceRadius);
+
+	// map the physical workspace of the haptic device to a larger virtual workspace.
+	m_tool->setWorkspaceRadius(m_virtualWorkspaceRadius);
+
+	// start the haptic tool
+	m_tool->start();
+
+
+	// read the scale factor between the physical workspace of the haptic
+	// device and the virtual workspace defined for the tool
+	m_toolWorkspaceScaleFactor = m_tool->getWorkspaceScaleFactor();
+
+	// maximum stiffness property
+	m_maxStiffness = hapticDeviceInfo.m_maxLinearStiffness / m_toolWorkspaceScaleFactor;
+
+	// maximum damping property
+	m_maxDamping = hapticDeviceInfo.m_maxLinearDamping / m_toolWorkspaceScaleFactor;
+
+	if (hapticDeviceInfo.m_sensedRotation)
+	{
+		// display a reference frame
+		m_tool->setShowFrame(true);
+
+		// set the size of the reference frame
+		m_tool->setFrameSize(2 * m_deviceRadius);
+	}
+
+	// set a color for haptic point (cursor)
+	m_tool->m_hapticPoint->m_sphereProxy->m_material->setColor(cColorf(1, 1, 1));
+
+
+
+	//--------------------------------------------------------------------------
+	// WIDGETS
+	//--------------------------------------------------------------------------
+
+	// create a font
+	cFont *font = NEW_CFONTCALIBRI20();
+
+	// create a label to display the haptic rate of the simulation
+	m_labelHapticRate = new cLabel(font);
+	m_camera->m_frontLayer->addChild(m_labelHapticRate);
+
+	// set font color
+	m_labelHapticRate->m_fontColor.setGrayLevel(0.4f);
+
+	// create a label with a small message
+	m_labelMessage = new cLabel(font);
+	m_camera->m_frontLayer->addChild(m_labelMessage);
+
+	// set font color
+	m_labelMessage->m_fontColor.setGrayLevel(0.4f);
+
+	// set text message
+	m_labelMessage->setText("move device cursor to interact with team");
+
+
+
+
+	//--------------------------------------------------------------------------
+	// CREATE ROBOT TEAM
+	//--------------------------------------------------------------------------
+
+	// retrieve robot positions from server
+	m_robotPositions = swarm2Vec(m_swarm);
+	m_playdohRobotPositions = m_robotPositions;
+
+	// create robot team
+	m_robotTeam = new cGenericRobotTeam(m_world);
+
+	// create playdoh robot team
+	m_playdohRobotTeam = new cGenericRobotTeam(m_world);
+
+	// arbitrary robot size
+	double robotRadius = 2.0; // hcval (dummy)
+
+	// add robots to team
+	for (unsigned int i = 0; i < m_robotPositions.size(); i++)
+	{
+		// create robot object and add it to world
+		cGenericRobot* robot = new cGenericRobot(robotRadius, m_robotPositions[m_ids[i]]);
+		m_world->addChild(robot);
+
+		// create sensor
+		robot->initSensor(0.90, 0.30, 10 * robotRadius, 0.5*robotRadius);
+		robot->setSensorRatio(0.5);
+
+		// add the robot object to the team
+		m_robotTeam->addRobot(robot);
+		m_robotTeam->getRobot(i)->setIdNumber(m_ids[i]);
+
+		// create a playdoh robot and add it to world
+		cGenericRobot* pRobot = new cGenericRobot(robotRadius, m_robotPositions[m_ids[i]]);
+		m_world->addChild(pRobot);
+
+		// add the robot object to the playdoh team
+		m_playdohRobotTeam->addRobot(pRobot);
+		m_playdohRobotTeam->getRobot(i)->setIdNumber(m_ids[i]);
+	}
+
+
+	// set color of all robots
+	m_robotTeam->setRobotColors(cColorf(1.0, 0.0, 1.0, 1.0f));
+
+	// show or hide convex hull lines
+	m_robotTeam->setShowConvexHull(m_showConvexHull);
+
+	// show id numbers
+	if (m_testing)
+		m_robotTeam->setShowId(true);
+	else m_robotTeam->setShowId(false);
+
+	// set color of all playdoh robots
+	m_playdohRobotTeam->setRobotColors(cColorf(0.0, 1.0, 0.0, 1.0f));
+	m_playdohRobotTeam->setShowEnabled(false);
+	m_playdohRobotTeam->setShowId(false);
+
+
+
+	// create controller
+	double kp = 0.05;
+	double kd = -0.000;
+	m_controller = new rtsController(m_robotPositions.size(), m_world, m_com, kp, kd);
+
+
+
+
+	//--------------------------------------------------------------------------
+	// HAPTIC FORCE NODE MODEL (PLAYDOH)
+	//--------------------------------------------------------------------------
+
+	m_playdoh = new cGELPlaydoh(m_world, m_robotPositions, m_deviceRadius, m_toolWorkspaceScaleFactor, m_maxStiffness);
+
+	// set convex hull in playdoh
+	m_playdoh->setConvexHull(m_robotTeam->getConvexHull());
+	m_playdoh->setConvexHullMapping(m_robotTeam->getConvexHullMapping());
+
+	// initialize playdoh
+	m_playdoh->initPlaydoh();
+
+	// set up mutex
+	m_mtx = new std::mutex;
+	m_playdoh->setMutex(m_mtx);
+
+	// choose to show playdoh at startup
+	m_playdoh->setShowEnabled(false, true);
+
+	// adjust robotRadius from playdoh scale factor
+	double agentRadius = 1.0;
+	m_robotTeam->setRadii(agentRadius);
+
+	m_playdohRobotTeam->setRadii(agentRadius);
+
+
+
+	//-----------------------------------------------------------------------
+	// CREATE GRAVITY WELL MANAGER
+	//-----------------------------------------------------------------------
+
+	// create gravity well manager for manipulation
+	m_gravityManager = new cGravityWellManager(m_world, m_com);
+
+	// set show
+	if (m_testing)
+		m_gravityManager->setShowEnabled(true);
+
+	// set add to world status
+	m_gravityManager->setAddToWorld(m_useAddGravityWellsToWorld);
+
+	// set mutex for gravity manager
+	//m_gravityManager->setMutex(m_mtx);
+
+
+
+	//-----------------------------------------------------------------------
+	// CREATE TARGETS IN WORLD
+	//-----------------------------------------------------------------------
+
+	if (m_dataManager->fin_is_open())
+	{
+		m_targetManager = new cTargetManager(m_world);
+
+		// read the target radius
+		double targetRadius;
+		string temp;
+		*m_dataManager->getFin() >> temp >> targetRadius;
+
+		// read the target found radius
+		double targetFoundRadius;
+		*m_dataManager->getFin() >> temp >> targetFoundRadius;
+		m_targetManager->setFoundRadius(targetFoundRadius);
+
+		// read the initial target color
+		float r, g, b, a;
+		*m_dataManager->getFin() >> temp >> r >> g >> b >> a;
+		m_targetManager->setInitialColor(cColorf(r, g, b, a));
+
+		*m_dataManager->getFin() >> temp >> r >> g >> b >> a;
+		m_targetManager->setFoundColor(cColorf(r, g, b, a));
+
+		// read all the target locations
+		while (!m_dataManager->getFin()->eof())
+		{
+			double x, y, z;
+			*m_dataManager->getFin() >> x >> y >> z;
+			m_targetManager->addTarget(targetRadius, cVector3d(x, y, z));
+			//printf("new target: %f, %f, %f\n", x, y, z);
+		}
+	}
+	else
+	{
+		printf("Target locations couldn't load from specified file.\n");
+
+		return 1;
+	}
+
+	// close input file
+	m_dataManager->fin_close();
+
+
+
+
+	//-----------------------------------------------------------------------
+	// COMPOSE THE GROUND
+	//-----------------------------------------------------------------------
+
+	m_ground = new cMesh();
+
+	// create a plane for ground
+	cCreatePlane(m_ground, 5 * m_virtualWorkspaceRadius, 5 * m_virtualWorkspaceRadius);
+
+	// create collision detector
+	m_ground->createBruteForceCollisionDetector();
+
+	m_ground->setLocalPos(0, 0, 0);
+
+	m_ground->setShowEnabled(false);
+
+	// create texture property
+	cTexture2dPtr texture = cTexture2d::create();
+	m_ground->setTexture(texture);
+
+	// set haptic properties
+	cColorf groundColor;
+	groundColor.setGray();
+	m_ground->m_material->setColor(groundColor);
+	if (m_useServerThread)
+		m_ground->m_material->setStiffness(0.7 * m_maxStiffness);
+	else m_ground->m_material->setStiffness(0.2 * m_maxStiffness);
+
+	m_ground->m_material->setStaticFriction(0.0);
+	m_ground->m_material->setDynamicFriction(0.0);
+
+	//ground->setVertexColor(cColorf(0.3, 0.0, 0.0));
+
+
+	// add object to world
+	m_world->addChild(m_ground);
+
+
+
+	//-----------------------------------------------------------------------
+	// POPULATE WITH BUILDINGS
+	//-----------------------------------------------------------------------
+
+	// set a building height
+	double buildingHeight = 10.0;
+
+	// retrieve robot positions from server
+	vector<vector<cVector3d>> polygons = polygons2Vec(m_com->polygons());
+
+	//printf("polygons:\n");
+	for (unsigned int k = 0; k < polygons.size(); ++k)
+	{
+		//printf("polygon with %d vertices\n", polygons.size());
+
+		// get polygon nodes for this building
+		vector<cVector3d> buildingNodes;
+		buildingNodes = polygons[k];
+
+		// compute triangle node order
+		vector<cVector3d> triangleNodes;
+		bool convex = true; // assume convex buildings for now
+		if (convex)
+		{
+			for (unsigned int i = 1; i < buildingNodes.size() - 1; i++)
+			{
+				triangleNodes.push_back(buildingNodes[0]);
+				triangleNodes.push_back(buildingNodes[i]);
+				triangleNodes.push_back(buildingNodes[i + 1]);
+			}
+		}
+
+		//for (unsigned int l=0; l < polygons[k].size(); ++l)
+		//{
+		//	printf("\t\t<%0.3f, %0.3f, %0.3f>\n", buildingNodes[l].x(), buildingNodes[l].y(), buildingNodes[l].z());
+		//}
+
+		cPolygon* newBuilding = new cPolygon(m_world, buildingNodes, triangleNodes, buildingHeight);
+		newBuilding->createPolygon();
+		m_world->addChild(newBuilding);
+		newBuilding->setColor(cColorf(0.6f, 0.6f, 0.6f, 1.0f));
+		newBuilding->setHapticEnabled(false);
+		m_buildings.push_back(newBuilding);
+	}
+
+
+
+
+	//--------------------------------------------------------------------------
+	// HQ FEED
+	//--------------------------------------------------------------------------
+	vector<string> hqFilenames;
+	string filename;
+	for (int i = 0; i < numBuildings; i++)
+	{
+		filename = feedFolder + to_string(i + 1) + ".txt";
+		hqFilenames.push_back(filename);
+	}
+
+	filename = feedFolder + "messages.txt";
+	m_feed = new rtsHQFeed(hqFilenames, filename);
+
+
+	//--------------------------------------------------------------------------
+	// SCOPES FOR HQ FEED
+	//--------------------------------------------------------------------------
+	double vSpacing = 10;
+	double hSpacing = 10;
+	double scopeW = 0.5*hqWindowW;
+	double scopeH = (hqWindowH - vSpacing*(numBuildings + 1)) / numBuildings;
+
+	// create a font
+	cFont* scopeFont = NEW_CFONTCALIBRI20();
+	for (int i = 0; i < numBuildings; i++)
+	{
+		// create a label for this scope
+		cLabel* label = new cLabel(scopeFont);
+		m_cameraHQ->m_frontLayer->addChild(label);
+		string labelText = "Area " + to_string(i + 1);
+		label->setText(labelText);
+		label->setLocalPos(hSpacing, hqWindowH - (i + 1)*(scopeH + vSpacing) + scopeH / 2);
+		m_scopeLabels.push_back(label);
+
+		// create scope
+		rtsScope* scope = new rtsScope();
+		m_cameraHQ->m_frontLayer->addChild(scope);
+		scope->setLocalPos(2 * hSpacing + label->getWidth(), hqWindowH - (i + 1)*(scopeH + vSpacing));
+		cColorf color; color.setWhiteBeige();
+		scope->setCornerColors(color, color, color, color);
+		scope->setSize(scopeW, scopeH);
+		scope->setRange(-1.0, 1.0);
+		scope->setSignalEnabled(true, false, false, false);
+		scope->setTransparencyLevel(0.7f);
+		m_scopes.push_back(scope);
+	}
+
+	// panel parameters
+	double userInputPanelPosY = vSpacing;
+	double userInputPanelH = 35;
+	double panelW = hqWindowW - (scopeW + 2 * hSpacing + m_scopeLabels[0]->getWidth() + 2 * m_scopes[0]->getScopeMargin());
+	double panelH = hqWindowH - 2.5 * vSpacing - userInputPanelH;
+	double panelPosX = hSpacing + m_scopeLabels[0]->getWidth() + scopeW + 2 * m_scopes[0]->getScopeMargin();
+	double panelPosY = vSpacing + userInputPanelH + 0.5*vSpacing;
+
+
+
+
+
+	//--------------------------------------------------------------------------
+	// PANEL FOR USER INPUT
+	//--------------------------------------------------------------------------
+
+	m_userInputPanel = new cPanel();
+	m_userInputPanel->setLocalPos(panelPosX, userInputPanelPosY);
+	m_userInputPanel->setSize(panelW, userInputPanelH);
+	cColorf color;
+	color.setBlack();
+	m_userInputPanel->setCornerColors(color, color, color, color);
+	m_userInputPanel->setCornerRadius(10, 10, 10, 10);
+	m_cameraHQ->m_frontLayer->addChild(m_userInputPanel);
+
+	// set message font
+	m_messageFont = NEW_CFONTCALIBRI20();
+
+	// set user input label
+	m_userInput = "";
+	m_userInputLabel = new cLabel(m_messageFont);
+	m_userInputLabel->setLocalPos(hSpacing, vSpacing, 0);
+	m_userInputLabel->setText(m_userInput);
+	m_userInputPanel->addChild(m_userInputLabel);
+
+
+
+
+	//--------------------------------------------------------------------------
+	// PANEL FOR HQ FEED
+	//--------------------------------------------------------------------------
+
+	m_hqPanel = new cPanel();
+	m_hqPanel->setLocalPos(panelPosX, panelPosY);
+	m_hqPanel->setSize(panelW, panelH);
+	m_hqPanel->setCornerColors(color, color, color, color);
+	m_cameraHQ->m_frontLayer->addChild(m_hqPanel);
+	m_hqPanel->setCornerRadius(10, 10, 10, 10);
+
+
+
+
+}
+
+bool rtsApplication::startSim()
+{
+
+	//--------------------------------------------------------------------------
+	// START SIMULATION
+	//--------------------------------------------------------------------------
+
+	// create a thread which starts the main haptics rendering loop
+	m_simulationFinished = false;
+
+	// turn server funcionality off until user decides to begin simulation
+	m_useServer = false;
+
+	// begin simulation if hard coded to do so
+	if (m_beginSim)
+	{
+		m_com->unpause();
+		m_beginSim = true;
+		m_useServer = true;
+	}
+
+	return true;
+}
+
+bool rtsApplication::startClock()
+{
+
+	// start data manager clock
+	m_dataManager->resetClock();
+	m_dataManager->startClock();
+
+	// start server timer
+	double serverTimeout = 0.01;
+	m_serverTimer.setTimeoutPeriodSeconds(serverTimeout);
+	m_serverTimer.reset();
+	m_serverTimer.start();
+
+	// start cycle counter
+	double cycleTimeout = 2.0;
+	m_cycleCounter.setTimeoutPeriodSeconds(cycleTimeout); //hcval
+	m_cycleCounter.reset();
+	m_cycleCounter.start();
+
+	return true;
+}
+
+void rtsApplication::updateServer()
+{
+    // initialize server frequency counter
+    m_serverFreqCounter.reset();
+    
+    while (m_simulationRunning)
+    {
+        if (m_enableQueryMutex)
+        {
+            m_queryMutex->lock();
+            m_enableQueryMutex = false;
+            m_queryMutex->unlock();
+        }
+        else
+        {
+            bool serverUpdate = false;
+            // query server at a certain frequency
+            if (m_serverTimer.timeoutOccurred())
+            {
+                serverUpdate = true;
+                m_serverTimer.reset();
+                m_serverTimer.start();
+            }
+            
+            if (serverUpdate)
+            {
+                // query server for swarm pointer
+                m_swarm = m_com->swarm();
+                if (!m_isNewSwarm)
+                    m_isNewSwarm = true;
+                
+            }
+            
+            if (m_serverPatrolCommanded)
+            {
+                //m_controller->resetForces();
+                
+                cout << "server patrol commanded, AIRadius " <<  m_AIRadius << endl;
+                
+                m_com->patrol(m_patrolCount, m_serverPatrolId1, m_serverPatrolDir1.x(), m_serverPatrolDir1.y(), m_serverPatrolDir1.z());
+                m_patrolCount++;
+                
+                m_com->patrol(m_patrolCount, m_serverPatrolId2, m_serverPatrolDir2.x(), m_serverPatrolDir2.y(), m_serverPatrolDir2.z());
+                m_patrolCount++;
+                
+                m_com->radius(m_radiusPriority, 0, m_serverAIRadius);
+                m_radiusPriority++;
+                
+                m_serverPatrolCommanded = false;
+            }
+            else if (m_serverManipButton || m_serverManipCompleted)
+            {
+                // update controller
+                m_controller->updateForces(m_serverDesiredPositions,
+                                         m_serverCurrentPositions);
+                
+                //cout << "updateForces" << endl;
+            }
+            else
+            {
+                m_controller->zeroLines();
+            }
+        }
+    }
+}
+
+void rtsApplication::gravityWellCreation()
+{
+    while (m_simulationRunning)
+    {
+        if (m_enableGWMutex)
+        {
+            m_gwMutex->lock();
+            
+            m_enableGWMutex = false;
+            
+            m_gwMutex->unlock();
+            
+        }
+        else if (m_gwMonitor && m_enableGWThreadVariables && !m_gwCordonIds.empty())
+        {
+            double sigma = 2.0;
+            double strength = 15.0;
+            
+            // wall method
+            int numWallWells = 5;
+            double wallLength = 3 * m_deviceRadius;
+            double repulsiveSigma = 3;
+            double repulsiveStrength = -10;
+            double attractiveSigma = 3;
+            double attractiveStrength = 10;
+            
+            // in contact with playdoh
+            if (m_gwContactState)
+            {
+                if (m_useWallMethod)
+                {
+                    int manipId = findNearestAgent(m_gwDevicePos, false);
+                    
+                    cVector3d heading = cNormalize(m_gwDevicePos - m_gwPrevDevicePos);
+                    heading.z(0);
+                    
+                    m_gravityManager->updateWells_WallMethod(m_gwDevicePos, heading, false, manipId, numWallWells, wallLength, 2 * m_deviceRadius,
+                                                           repulsiveSigma, repulsiveStrength, attractiveSigma, attractiveStrength);
+                    
+                }
+                else if (m_useRepulsiveGravityWells)
+                {
+                    m_gravityManager->updateRepulsiveWells(m_gwPlaydohRobotPositions, m_gwCenterOfMass, m_gwDevicePos, m_deviceRadius);
+                    
+                }
+                else
+                {
+                    // set desired wells in the gravity manager (as a baseline)
+                    vector<cVector3d> serverPositions = gwIdOrder2CordonOrderPositions(m_gwRobotTeamPositions);
+                    m_gravityManager->updateWellsFromPositions(serverPositions, m_gwPlaydohRobotPositions, m_gwCordonIds, true, sigma, strength);
+                }
+                
+            }
+            // disconnect from playdoh
+            else if (m_gwPrevContactState)
+            {
+                if (m_useGravityWells)
+                {
+                    if (m_useWallMethod)
+                    {
+                        int manipId = findNearestAgent(m_gwDevicePos, false);
+                        
+                        cVector3d heading = cNormalize(m_gwDevicePos - m_gwPrevDevicePos);
+                        heading.z(0);
+                        
+                        m_gravityManager->updateWells_WallMethod(m_gwDevicePos, heading, false, manipId, numWallWells, wallLength, 2 * m_deviceRadius,
+                                                               repulsiveSigma, repulsiveStrength, attractiveSigma, attractiveStrength);
+                        
+                    }
+                    else if (m_useRepulsiveGravityWells)
+                    {
+                        m_gravityManager->updateRepulsiveWells(m_gwPlaydohRobotPositions, m_gwCenterOfMass, m_gwDevicePos, m_deviceRadius);
+                    }
+                    else
+                    {
+                        // set desired wells in the gravity manager (as a baseline)
+                        vector<cVector3d> serverPositions = idOrder2CordonOrderPositions(m_gwRobotTeamPositions);
+                        m_gravityManager->updateWellsFromPositions(serverPositions, m_gwPlaydohRobotPositions, m_gwCordonIds, false, sigma, strength);
+                    }
+                }
+            }
+            
+            m_gravityManager->deleteAllWellsToDelete();
+            
+        }
+    }
+}
+
+//---------------------------------------------------------------------------
+
+void rtsApplication::dataCollection()
+{
+    while (m_simulationRunning)
+    {
+        if (m_enableDataMutex)
+        {
+            m_dataMutex->lock();
+            m_enableDataMutex = false;
+            m_dataMutex->unlock();
+        }
+        else
+        {
+            // write and pop back the oldest piece of data
+            if (!m_dataStack.empty())
+            {
+                m_dataManager->writeData(m_dataStack[0]);
+                m_dataStack.pop_front();
+            }
+        }
+    }
+}
+
+
+//------------------------------------------------------------------------------
+
+void rtsApplication::resizeWindowHQ(int w, int h)
+{
+    m_windowWHQ = w;
+    m_windowHHQ = h;
+    
+    // update size and positions of scopes and labels
+    double vSpacing = 10;
+    double hSpacing = 10;
+    double scopeW = 0.5*m_windowWHQ;
+    double scopeH = (m_windowHHQ - vSpacing*(m_scopes.size() + 1)) / m_scopes.size();
+    int numScopes = m_scopes.size();
+    for (int i = 0; i < numScopes; i++)
+    {
+        m_scopeLabels[i]->setLocalPos(hSpacing, m_windowHHQ - (i + 1)*(scopeH + vSpacing) + scopeH / 2);
+        
+        m_scopes[i]->setLocalPos(2 * hSpacing + m_scopeLabels[i]->getWidth(), m_windowHHQ - (i + 1)*(scopeH + vSpacing));
+        m_scopes[i]->setSize(scopeW, scopeH);
+    }
+    
+    // panel sizing parameters
+    double userInputPanelPosY = vSpacing;
+    double userInputPanelH = 35;
+    double panelW = m_windowWHQ - (scopeW + 2 * hSpacing + m_scopeLabels[0]->getWidth() + 2 * m_scopes[0]->getScopeMargin());
+    double panelH = m_windowHHQ - 2.5 * vSpacing - userInputPanelH;
+    double panelPosX = hSpacing + m_scopeLabels[0]->getWidth() + scopeW + 2 * m_scopes[0]->getScopeMargin();
+    double panelPosY = vSpacing + userInputPanelH + 0.5*vSpacing;
+    
+    // update user input panel size and position
+    m_userInputPanel->setLocalPos(panelPosX, userInputPanelPosY);
+    m_userInputPanel->setSize(panelW, userInputPanelH);
+    
+    // update user input label
+    m_userInputLabel->setLocalPos(hSpacing, vSpacing, 0);
+    m_userInputLabel->setText(m_userInput);
+    
+    // update hq message panel size and position
+    m_hqPanel->setLocalPos(panelPosX, panelPosY);
+    m_hqPanel->setSize(panelW, panelH);
+    
+    // resize message labels
+    int numHQMessages = m_hqMessages.size();
+    for (int i = 0; i < numHQMessages; i++)
+    {
+        m_hqMessages[i]->setLocalPos(hSpacing, panelH - (i + 1) * m_hqMessages[i]->getHeight());
+    }
+    
+}
+
+
+void rtsApplication::resizeWindow(int w, int h)
+{
+    m_windowW = w;
+    m_windowH = h;
+}
+
+//------------------------------------------------------------------------------
+
+bool rtsApplication::keySelectHQ(unsigned char key, int x, int y)
+{
+    bool exiting = false;
+    // fullscreen key
+    if (key == '1')
+    {
+        if (m_fullscreenHQ)
+        {
+            windowPosXHQ = glutGet(GLUT_INIT_WINDOW_X);
+            windowPosYHQ = glutGet(GLUT_INIT_WINDOW_Y);
+            m_windowWHQ = glutGet(GLUT_INIT_WINDOW_WIDTH);
+            m_windowHHQ = glutGet(GLUT_INIT_WINDOW_HEIGHT);
+            glutPositionWindow(windowPosXHQ, windowPosYHQ);
+            glutReshapeWindow(m_windowWHQ, m_windowHHQ);
+            m_fullscreenHQ = false;
+        }
+        else
+        {
+            glutFullScreen();
+            m_fullscreenHQ = true;
+        }
+    }
+    
+    if (key == '\r')
+    {
+        if (m_userInput != "")
+            m_newUserMessage = true;
+        else if (m_userInput == "\r")
+        {
+            m_userInput = "";
+        }
+    }
+    else if (key == '\b')
+    {
+        if (m_userInput != "")
+            m_userInput.pop_back();
+    }
+    else
+    {
+        m_userInput += key;
+    }
+    return exiting;
+}
+
+bool rtsApplication::keySelect(unsigned char key, int x, int y)
+{
+    bool exiting = false;
+    // option ESC: exit
+    if ((key == 27) || (key == 'x'))
+    {
+        // quit communicator
+        m_com->quit();
+        
+        // exit application
+        exiting = true;
+    }
+    
+    // option 0:
+    if (key == '0')
+    {
+        
+    }
+    
+    // option 1:
+    if (key == '1')
+    {
+        
+    }
+    
+    // option 2:
+    if (key == '2')
+    {
+        
+    }
+    
+    // option 3:
+    if (key == '3')
+    {
+        m_playdoh->setShowEnabled(!m_playdoh->getShowEnabled(), true);
+    }
+    
+    // option 4:
+    if (key == '4')
+    {
+        m_playdoh->setHapticEnabled(!m_playdoh->getHapticEnabled(), true);
+    }
+    
+    // option 5:
+    if (key == '5')
+    {
+        m_robotTeam->toggleShowEnabled();
+    }
+    
+    // option 6:
+    if (key == '6')
+    {
+        m_playdohRobotTeam->toggleShowEnabled();
+    }
+    
+    // option 7
+    if (key == '7')
+    {
+        m_robotTeam->toggleShowId();
+    }
+    
+    if (key == 'a')
+    {
+        m_controller->resetForces();
+        m_manipCompleted = false;
+    }
+    
+    if (key == 'b')
+    {
+        // begin simulation only once
+        if (!m_beginSim)
+        {
+            m_com->unpause();
+            m_beginSim = true;
+            m_useServer = true;
+        }
+    }
+    
+    // convex hull show
+    if (key == 'c')
+    {
+        if (m_playdoh->getPatrolMode())
+            m_robotTeam->setShowConvexHull(!m_robotTeam->getShowConvexHull());
+    }
+    
+    // option f: toggle fullscreen
+    if (key == 'f')
+    {
+        if (m_fullscreen)
+        {
+            windowPosX = glutGet(GLUT_INIT_WINDOW_X);
+            windowPosY = glutGet(GLUT_INIT_WINDOW_Y);
+            m_windowW = glutGet(GLUT_INIT_WINDOW_WIDTH);
+            m_windowH = glutGet(GLUT_INIT_WINDOW_HEIGHT);
+            glutPositionWindow(windowPosX, windowPosY);
+            glutReshapeWindow(m_windowW, m_windowH);
+            m_fullscreen = false;
+        }
+        else
+        {
+            glutFullScreen();
+            m_fullscreen = true;
+        }
+    }
+    
+    if (key == 'g')
+    {
+        m_gravityManager->addGravity(false, m_devicePos.x(), m_devicePos.y(), 0, m_testSigma, m_testStrength);
+        //m_gravityManager->addGravity(false, 90, -45, 0, testSigma, 0*testStrength);
+        
+        //std::cout << "Manually added single attractive gravity well point" << std::endl;
+    }
+    
+    if (key == 'v')
+    {
+        m_gravityManager->addGravity(false, m_devicePos.x(), m_devicePos.y(), 0, m_testSigma, -m_testStrength);
+        //m_gravityManager->addGravity(false, 90, -45, 0, testSigma, -testStrength);
+        
+        //std::cout << "Manually added repulsive gravity well point" << std::endl;
+    }
+    
+    if (key == 'h')
+    {
+        m_gravityManager->resetGravity();
+        int numPositions = m_playdohRobotPositions.size();
+        for (int i = 0; i < numPositions; ++i)
+        {
+            m_gravityManager->addGravity(false, m_playdohRobotPositions[i].x(), m_playdohRobotPositions[i].y(), m_playdohRobotPositions[i].z(), 10, 5);
+        }
+    }
+    
+    if (key == 'i')
+    {
+        m_gravityManager->toggleShowEnabled();
+    }
+    
+    if (key == 'j')
+    {
+        //gravityManager->resetPathGravity();
+        std::cout << m_gravityManager->getNumPathWells() << " for path" << std::endl;
+        std::cout << m_gravityManager->getNumWells() << " for desired " << std::endl;
+    }
+    
+    if (key == 'k')
+    {
+        m_showK = !m_showK;
+    }
+    
+    if (key == 'p')
+    {
+        m_showPerim = !m_showPerim;
+    }
+    
+    if (key == 'q')
+    {
+        // only quit the server
+        m_com->quit();
+    }
+    
+    if (key == 'r')
+    {
+        m_testSpeed = true;
+    }
+    
+    if (key == 's')
+    {
+        m_useServer = !m_useServer;
+        if (m_useServer)
+            std::cout << "useServer: true" << std::endl;
+        else std::cout << "useServer: false" << std::endl;
+    }
+    
+    if (key == 't')
+    {
+        m_showToolPos = !m_showToolPos;
+        cVector3d toolPos = m_tool->getLocalPos();
+        cVector3d globalPos = m_tool->getGlobalPos();
+        
+    }
+    
+    if (key == 'w')
+    {
+        // make baseline distribution changes using gravity wells
+        // create a baseline of wells that are desired
+        vector<cVector3d> pathPos(5);
+        pathPos[0] = cVector3d(30, 30, 0);
+        pathPos[1] = cVector3d(35, 35, 0);
+        pathPos[2] = cVector3d(40, 40, 0);
+        pathPos[3] = cVector3d(45, 45, 0);
+        pathPos[4] = cVector3d(50, 50, 0);
+        
+        double sigma = 15.0;
+        double strength = 15.0;
+        int numWells = 10;
+        
+        // add this path to gravity wells manager
+        int numPathPos = pathPos.size();
+        for (int i = 0; i < numPathPos; ++i)
+        {
+            m_gravityManager->addGravity(false, pathPos[i].x(), pathPos[i].y(), pathPos[i].z(), sigma - 5.0*i, strength + 5.0*i);
+        }
+        
+        // create a desired well
+        cVector3d des(65, 65, 0);
+        m_gravityManager->addGravity(false, des.x(), des.y(), des.z(), sigma, strength);
+        
+    }
+    
+    if (key == 'y')
+    {
+        m_gravityManager->removeOldestPathWell();
+    }
+    
+    // quit program without quitting server
+    if (key == 'z')
+    {
+        // exit application
+        exiting = true;
+    }
+    return exiting;
+}
+
+
+void rtsApplication::mouseClick(int button, int state, int x, int y)
+{
+    //// mouse button down
+    //if (state == GLUT_DOWN)
+    //{
+    //    m_flagResize = true;
+    //    mouseX = x;
+    //    mouseY = y;
+    //    mouseButton = button;
+    //    
+    //    if (mouseButton == GLUT_RIGHT_BUTTON)
+    //    {
+    //        m_playdoh->setEnableResizeCordon(m_flagResize);
+    //        m_resizePercentage = 1.00;
+    //    }
+    //}
+    //
+    //// mouse button up
+    //else if (state == GLUT_UP)
+    //{
+    //    m_flagResize = false;
+    //    if (mouseButton == GLUT_RIGHT_BUTTON)
+    //    {
+    //        m_playdoh->setEnableResizeCordon(m_flagResize);
+    //    }
+    //}
+}
+
+//---------------------------------------------------------------------------
+
+void rtsApplication::mouseMove(int x, int y)
+{
+    //if (m_flagResize)
+    //{
+    //    if (mouseButton == GLUT_RIGHT_BUTTON)
+    //    {
+    //        m_resizePercentage = m_resizePercentage - 0.00001 * (y - mouseY);
+    //    }
+    //}
+    ////std::cout << m_resizePercentage << std::endl;
+    //m_playdoh->setResizePercentage(m_resizePercentage);
+    //
+    //mouseX = x;
+    //mouseY = y;
+}
+
+
+//------------------------------------------------------------------------------
+
+void rtsApplication::close(void)
+{
+    // stop the simulation
+    m_simulationRunning = false;
+    
+    // finish writing data
+    if (m_useThreads && m_useDataCollection && !m_enableDataMutex)
+    {
+        m_dataMutex->lock();
+        m_enableDataMutex = true;
+        
+        int m_tempDataStackSize = m_tempDataStack.size();
+        for (int i = 0; i < m_tempDataStackSize; i++)
+        {
+            m_dataStack.push_back(m_tempDataStack[i]);
+        }
+        m_tempDataStack.clear();
+        
+        m_dataMutex->unlock();
+    }
+    
+    // time intervals check
+    if (m_checkTimeIntervals)
+    {
+        string outputFile = "../../outputs/timeIntervals.txt";
+        ofstream fout;
+        fout.open(outputFile.c_str());
+        
+        int numTimeIntervals = m_timeIntervals.size();
+        for (int i = 0; i < numTimeIntervals; i++)
+        {
+            fout << m_timeIntervals[i] << "\n";
+        }
+        
+        m_timeIntervals.clear();
+        
+        fout.close();
+    }
+    
+    // time intervals check
+    if (m_checkRegions)
+    {
+        string outputFile = "../../outputs/regionTimeIntervals.txt";
+        ofstream fout;
+        fout.open(outputFile.c_str());
+        
+        int numRegionTimeIntervals = m_regionTimeIntervals.size();
+        for (int i = 0; i < numRegionTimeIntervals; i++)
+        {
+            fout << m_regionTimeIntervals[i] << "\n";
+        }
+        
+        m_regionTimeIntervals.clear();
+        
+        fout.close();
+    }
+    
+    // wait for graphics and haptics loops to terminate
+    while (!m_simulationFinished) { cSleepMs(100); }
+    
+    // close haptic device
+    m_tool->stop();
+    
+    // deallocate memory
+    deleteAndNullAllPointers();
+}
+
+void rtsApplication::deleteAndNullAllPointers()
+{
+    //-----------------------------------------
+    // SERVER
+    //-----------------------------------------
+    
+    delete m_queryMutex;
+    m_queryMutex = NULL;
+    
+    //delete swarm;
+    //m_swarm = NULL;
+    
+    delete m_com;
+    m_com = NULL;
+    
+    //-----------------------------------------
+    // ENVIRONMENT
+    //-----------------------------------------
+    m_world->removeChild(m_ground);
+    delete m_ground;
+    m_ground = NULL;
+    
+    // buildings
+    vector<cPolygon*>::iterator polyIt;
+    for (polyIt = m_buildings.begin(); polyIt < m_buildings.end(); polyIt++)
+    {
+        cPolygon* nextObject = (*polyIt);
+        m_world->removeChild(nextObject);
+        delete (nextObject);
+        nextObject = NULL;
+    }
+    m_buildings.clear();
+    
+    //-----------------------------------------
+    // ROBOT TEAM
+    //-----------------------------------------
+    
+    // mutex
+    delete m_mtx;
+    m_mtx = NULL;
+    
+    // robot team
+    delete m_robotTeam;
+    m_robotTeam = NULL;
+    
+    // playdoh robot team
+    delete m_playdohRobotTeam;
+    m_playdohRobotTeam = NULL;
+    
+    // controller
+    delete m_controller;
+    m_controller = NULL;
+    
+    //-----------------------------------------
+    // HAPTICS
+    //-----------------------------------------
+    
+    delete m_playdoh;
+    m_playdoh = NULL;
+    
+    //-----------------------------------------
+    // TOOL
+    //-----------------------------------------
+    
+    // tool
+    m_cameraProjSphere->removeChild(m_tool);
+    delete m_tool;
+    m_tool = NULL;
+    
+    delete m_handler;
+    m_handler = NULL;
+    
+    delete m_labelMessage;
+    m_labelMessage = NULL;
+    
+    delete m_labelHapticRate;
+    m_labelHapticRate = NULL;
+    
+    //delete m_deviceLabel;
+    //m_deviceLabel = NULL;
+    
+    //delete m_rootLabels;
+    //m_rootLabels = NULL;
+    
+    //-----------------------------------------
+    // GRAVITY WELL
+    //-----------------------------------------
+    
+    delete m_gravityManager;
+    m_gravityManager = NULL;
+    
+	if (m_useGravityWells)
+	{
+		delete m_gwMutex;
+		m_gwMutex = NULL;
+	}
+
+    //-----------------------------------------
+    // DATA
+    //-----------------------------------------
+    
+    delete m_dataManager;
+    m_dataManager = NULL;
+    
+    delete m_dataMutex;
+    m_dataMutex = NULL;
+    
+    //-----------------------------------------
+    // TARGET
+    //-----------------------------------------
+    
+    delete m_targetManager;
+    m_targetManager = NULL;
+    
+    //-----------------------------------------
+    // HQ FEED
+    //-----------------------------------------
+    
+
+    delete m_feed;
+    m_feed = NULL;
+    
+    // scope labels
+    vector<cLabel*>::iterator scopeLabelIt;
+    for (scopeLabelIt = m_scopeLabels.begin(); scopeLabelIt < m_scopeLabels.end(); scopeLabelIt++)
+    {
+        cLabel* nextLabel = (*scopeLabelIt);
+        m_worldHQ->removeChild(nextLabel);
+        delete (nextLabel);
+        nextLabel = NULL;
+    }
+    m_buildings.clear();
+    
+    // scopes
+    vector<rtsScope*>::iterator scopeIt;
+    for (scopeIt = m_scopes.begin(); scopeIt < m_scopes.end(); scopeIt++)
+    {
+        rtsScope* nextScope = (*scopeIt);
+        m_worldHQ->removeChild(nextScope);
+        delete (nextScope);
+        nextScope = NULL;
+    }
+    m_scopes.clear();
+    
+    // user input label
+    m_userInputPanel->removeChild(m_userInputLabel);
+    delete m_userInputLabel;
+    m_userInputLabel = NULL;
+    
+    // user input panel
+    m_cameraHQ->m_frontLayer->removeChild(m_userInputPanel);
+    delete m_userInputPanel;
+    m_userInputPanel = NULL;
+    
+    // hq messages labels
+    deque<cLabel*>::iterator hqLabelsIt;
+    for (hqLabelsIt = m_hqMessages.begin(); hqLabelsIt < m_hqMessages.end(); hqLabelsIt++)
+    {
+        cLabel* nextLabel = (*hqLabelsIt);
+        m_hqPanel->removeChild(nextLabel);
+        delete (nextLabel);
+        nextLabel = NULL;
+    }
+    m_buildings.clear();
+    
+    // hq panel
+    m_cameraHQ->m_frontLayer->removeChild(m_hqPanel);
+    delete m_hqPanel;
+    m_hqPanel = NULL;
+    
+    // message font
+    delete m_messageFont;
+    m_messageFont = NULL;
+    
+    // hq light
+    m_worldHQ->removeChild(m_lightHQ);
+    delete m_lightHQ;
+    m_lightHQ = NULL;
+    
+    // hq camera
+    m_worldHQ->removeChild(m_cameraHQ);
+    delete m_cameraHQ;
+    m_cameraHQ = NULL;
+    
+    // hq world
+    delete m_worldHQ;
+    m_worldHQ = NULL;
+    
+    //-----------------------------------------
+    // WORLD
+    //-----------------------------------------
+    
+    // projection sphere for tool
+    m_camera->removeChild(m_cameraProjSphere);
+    delete m_cameraProjSphere;
+    m_cameraProjSphere = NULL;
+    
+    // light
+    m_world->removeChild(m_light);
+    delete m_light;
+    m_light = NULL;
+    
+    // camera
+    m_world->removeChild(m_camera);
+    delete m_camera;
+    m_camera = NULL;
+    
+    // world
+    delete m_world;
+    m_world = NULL;
+}
+
+//------------------------------------------------------------------------------
+
+void rtsApplication::graphicsTimerHQ(int data)
+{
+
+}
+
+void rtsApplication::graphicsTimer(int data)
+{
+
+}
+
+//------------------------------------------------------------------------------
+
+void rtsApplication::updateGraphicsHQ(void)
+{
+    
+    /////////////////////////////////////////////////////////////////////
+    // UPDATE WIDGETS
+    /////////////////////////////////////////////////////////////////////
+    
+    // retrieve hq data from feed according to simulation time
+    HQData nextData = m_feed->getNextData(m_simClock.getCurrentTimeSeconds());
+    bool sampleSignal = m_feed->nextDataReached();
+    
+    int numScopes = m_scopes.size();
+    for (int i = 0; i < numScopes; i++)
+    {
+        //double time = nextData.data[i].time;
+        double val = nextData.data[i].signalVal;
+        m_scopes[i]->setSampledSignalValues(sampleSignal, val);
+    }
+    
+    // retrieve hq message data from feed according to simulation time
+    double vSpacing = 10;
+    double hSpacing = 10;
+    double scopeW = 0.5*m_windowWHQ;
+    double scopeH = (m_windowHHQ - vSpacing*(m_scopes.size() + 1)) / m_scopes.size();
+    double userInputPanelPosX = hSpacing + m_scopeLabels[0]->getWidth() + scopeW + 2 * m_scopes[0]->getScopeMargin();
+    double userInputPanelPosY = vSpacing;
+    double userInputPanelH = 35;
+    double panelH = m_windowHHQ - 2.5 * vSpacing - userInputPanelH;
+    double panelW = m_windowWHQ - (scopeW + 2 * hSpacing + m_scopeLabels[0]->getWidth() + 2 * m_scopes[0]->getScopeMargin());
+    
+    
+    
+    HQMessagePair* nextMessage = m_feed->getNextMessagePair(m_simClock.getCurrentTimeSeconds());
+    
+    bool newMessage = m_feed->nextMessageReached();
+    
+    int maxFeedMessages = 10;
+    if (newMessage || m_newUserMessage)
+    {
+        cLabel* messageLabel = new cLabel(m_messageFont);
+        string displayMessage;
+        if (m_newUserMessage)
+        {
+            displayMessage = "User: " + m_userInput;
+            m_userInput = "";
+            m_newUserMessage = false;
+            messageLabel->m_fontColor.setGreen();
+        }
+        else displayMessage = "HQ: " + nextMessage->message;
+        messageLabel->setText(displayMessage);
+        m_hqPanel->addChild(messageLabel);
+        m_hqMessages.push_back(messageLabel);
+        
+        // if number of current messages too many, delete latest
+        if ((int)(m_hqMessages.size()) > maxFeedMessages)
+        {
+            cLabel* labelToDelete = m_hqMessages[0];
+            m_hqMessages.pop_front();
+            
+            // delete the label
+            m_hqPanel->removeChild(labelToDelete);
+            delete labelToDelete;
+            labelToDelete = NULL;
+        }
+        
+        // set position of all messages in feed
+        int numHQMessages = m_hqMessages.size();
+        for (int i = 0; i < numHQMessages; i++)
+        {
+            m_hqMessages[i]->setLocalPos(hSpacing, panelH - (i + 1) * m_hqMessages[i]->getHeight());
+        }
+    }
+    
+    
+    // Display user keyboard input
+    m_userInputLabel->setLocalPos(hSpacing, vSpacing, 0);
+    m_userInputLabel->setText(m_userInput);
+    
+    /////////////////////////////////////////////////////////////////////
+    // RENDER SCENE
+    /////////////////////////////////////////////////////////////////////
+    
+    // update shadow maps (if any)
+	bool mirroredDisplay = false;
+    m_worldHQ->updateShadowMaps(false, mirroredDisplay);
+    
+    // render world
+    m_cameraHQ->renderView(m_windowWHQ, m_windowHHQ);
+    
+    // swap buffers
+    glutSwapBuffers();
+    
+    // wait until all GL commands are completed
+    glFinish();
+    
+    // check for any OpenGL errors
+    GLenum err = glGetError();
+    if (err != GL_NO_ERROR) cout << "Error: " << gluErrorString(err) << endl;
+    
+}
+
+void rtsApplication::updateGraphics(void)
+{
+    /////////////////////////////////////////////////////////////////////
+    // UPDATE WIDGETS
+    /////////////////////////////////////////////////////////////////////
+    
+    // update haptic rate data
+    m_labelHapticRate->setText(cStr(m_frequencyCounter.getFrequency(), 0) + " Hz");
+    
+    // update position of haptic rate label
+    m_labelHapticRate->setLocalPos((int)(0.5 * (m_windowW - m_labelHapticRate->getWidth())), 15);
+    
+    // update position of message label
+    m_labelMessage->setLocalPos((int)(0.5 * (m_windowW - m_labelMessage->getWidth())), 50);
+    
+    
+    /////////////////////////////////////////////////////////////////////
+    // RENDER SCENE
+    /////////////////////////////////////////////////////////////////////
+    
+    // update shadow maps (if any)
+	bool mirroredDisplay = false;
+    m_world->updateShadowMaps(false, mirroredDisplay);
+    
+    // render world
+    m_camera->renderView(m_windowW, m_windowH);
+    
+    // swap buffers
+    glutSwapBuffers();
+    
+    // wait until all GL commands are completed
+    glFinish();
+    
+    // check for any OpenGL errors
+    GLenum err = glGetError();
+    if (err != GL_NO_ERROR) cout << "Error: " << gluErrorString(err) << endl;
+}
+
+//------------------------------------------------------------------------------
+
+// blank and test updateHaptics function
+
+//void updateHaptics(void)
+//{
+//	// reset clock
+//	cPrecisionClock clock;
+//	clock.reset();
+//
+//	cPrecisionClock testClock;
+//	testClock.setTimeoutPeriodSeconds(0.001);
+//	testClock.reset();
+//
+//	// simulation in now running
+//	m_simulationRunning = true;
+//	m_simulationFinished = false;
+//
+//	// main haptic simulation loop
+//	while (m_simulationRunning)
+//	{
+//		/////////////////////////////////////////////////////////////////////
+//		// SIMULATION TIME
+//		/////////////////////////////////////////////////////////////////////
+//
+//		// stop the simulation clock
+//		clock.stop();
+//
+//		// read the time increment in seconds
+//		double timeInterval = clock.getCurrentTimeSeconds();
+//
+//		// restart the simulation clock
+//		clock.reset();
+//		clock.start();
+//
+//
+//		/////////////////////////////////////////////////////////////////////
+//		// HAPTIC FORCE COMPUTATION
+//		/////////////////////////////////////////////////////////////////////
+//
+//		// compute global reference frames for each object
+//		m_world->computeGlobalPositions(true);
+//
+//		//// update position and orientation of tool
+//		m_tool->updateFromDevice();
+//
+//		// compute interaction forces
+//		m_tool->computeInteractionForces();
+//
+//		// get interaction forces magnitude
+//		double force = m_tool->getDeviceGlobalForce().length();
+//
+//		// send forces to haptic device
+//		m_tool->applyToDevice();
+//
+//		//int d = 0;
+//		//int num = 1;
+//		//for (int i = 0; i < num; i++)
+//		//{
+//		//	for (int i = 0; i < num; i++)
+//		//	{
+//		//		for (int i = 0; i < num; i++)
+//		//		{
+//		//			d++;
+//		//		}
+//		//	}
+//		//	comm::Swarm* something = m_com->swarm();
+//
+//		//}
+//
+//		//// run a loop until timeout occurs
+//		//testClock.start();
+//		//while (!testClock.timeoutOccurred())
+//		//{
+//		//
+//		//	if (testClock.timeoutOccurred())
+//		//	{
+//		//		testClock.stop();
+//		//		testClock.reset();
+//		//		break;
+//		//	}
+//		//}
+//
+//
+//
+//
+//
+//		// update frequency counter
+//		m_frequencyCounter.signal(1);
+//	}
+//
+//	// exit haptics thread
+//	m_simulationFinished = true;
+//}
+
+
+// robot teams updateHaptics function
+
+void rtsApplication::updateHaptics(void)
+{
+    m_frequencyCounter.reset();
+    
+    // reset clock
+    cPrecisionClock clock;
+    clock.reset();
+    
+    // simulation in now running
+    m_simulationRunning = true;
+    m_simulationFinished = false;
+    
+    // reset clock
+    m_simClock.reset();
+    m_simClock.start();
+    m_speedClock.reset();
+    
+    // resize button variables
+    bool resizeButton = false;
+    bool prevResizeButton = false;
+    cVector3d resizeToolStartPos;
+    resizeToolStartPos.zero();
+    double prevToolZ = 0.0;
+    
+    // command patrol button variables
+    bool commandPatrolButton = false;
+    bool prevCommandPatrolButton = false;
+    //double patrolColorCounter = 0.0;
+    cVector3d patrolToolStartPos;
+    patrolToolStartPos.zero();
+    
+    // manipulation button variables
+    bool manipButton = false;
+    bool prevManipButton = false;
+    bool manipSpacing = false;
+    cVector3d manipToolStartPos;
+    manipToolStartPos.zero();
+    
+    // manipulation variables
+    bool gravityWellMonitor = false;
+    int gravityWellCounter = 0;
+    cVector3d prevToolPos(0, 0, 0);
+    
+    //int m_swarmModeInt = 0;
+    int prevSwarmModeInt = 0;
+    bool increaseRadius = false;
+    
+    bool useButtons = true;
+    
+    // main haptic simulation loop
+    while (m_simulationRunning)
+    {
+        // zero haptic devices
+        if (m_numHapticDevices == 0)
+        {
+            /////////////////////////////////////////////////////////////////////
+            // SIMULATION TIME
+            /////////////////////////////////////////////////////////////////////
+            
+            // stop the simulation clock
+            clock.stop();
+            
+            // read the time increment in seconds
+            double timeInterval = clock.getCurrentTimeSeconds();
+            
+            if (m_checkTimeIntervals)
+            {
+                m_timeIntervals.push_back(timeInterval);
+            }
+            
+            if (timeInterval > 0.001) { timeInterval = 0.001; }
+            
+            
+            // restart the simulation clock
+            clock.reset();
+            clock.start();
+            
+            /////////////////////////////////////////////////////////////////////
+            // HAPTIC FORCE COMPUTATION
+            /////////////////////////////////////////////////////////////////////
+            
+            // compute global reference frames for each object
+            m_world->computeGlobalPositions(true);
+            
+            // update position and orientation of tool
+            m_tool->updateFromDevice();
+            
+            // compute interaction forces
+            m_tool->computeInteractionForces();
+            
+            
+            //---------------------------------------------------
+            // Retrieve information from robot distribution methods
+            //---------------------------------------------------
+            
+            retrieveRobotData(manipButton);
+            
+            //---------------------------------------------------
+            // Haptic methods
+            //---------------------------------------------------
+            // initialize zero force
+            cVector3d force;
+            force.zero();
+            
+            // dummy tool position
+            cVector3d pos(1000, 10000, 10000);
+            //pos = m_tool->getDeviceGlobalPos();
+            
+            // update playdoh
+            int nearestIndex = 0;
+            double modFactor = 1.0;
+            cVector3d playdohForce = m_playdoh->computeForce(pos, m_deviceRadius, nearestIndex, modFactor, manipButton, manipSpacing);
+            m_playdoh->updateDynamics(timeInterval);
+            
+            //m_tool->addDeviceGlobalForce(playdohForce);
+            
+            // send forces to haptic device
+            m_tool->applyToDevice();
+            
+            
+            //if (m_showPerim)
+            //{
+            //	std::cout << m_playdoh->getPerimeter() << std::endl;
+            //}
+            
+            //if (m_showK)
+            //{
+            //	std::cout << m_playdoh->getSpringStiffness() << std::endl;
+            //}
+            
+            //---------------------------------------------------
+            // Send information to robot distribution methods
+            //---------------------------------------------------
+            
+            // extract new robot positions from playdoh model
+            //m_robotPositions = m_playdoh->getRobotPositions();
+            
+            // check swarm mode for radius adjustment
+            if (prevSwarmModeInt == 0 && m_swarmModeInt == 1)
+            {
+                increaseRadius = true;
+            }
+            
+            if (increaseRadius)
+            {
+                // changed mode from patrol to cordon, so increase swarm radius
+                m_AIRadius = 1.01*m_AIRadius;
+                m_com->radius(m_radiusPriority, 0, m_AIRadius);
+                m_radiusPriority++;
+                
+                double maxRadius = 40;
+                if (m_AIRadius > maxRadius)
+                {
+                    m_AIRadius = maxRadius;
+                    increaseRadius = false;
+                }
+            }
+            
+            
+            // send robot positions
+            if (m_useDataCollection)
+            {
+                // if threads aren't used, collect data here
+                if (!m_useThreads)
+                {
+                    // data collection and write to file
+                    m_dataManager->collectAndWriteData(pos, force, m_robotTeam->getRobotPositions());
+                }
+                else
+                {
+                    cData data = m_dataManager->collectData(pos, force, m_robotTeam->getRobotPositions());
+                    if (data.getValid())
+                    {
+                        m_tempDataStack.push_back(data);
+                    }
+                    
+                    if (m_tempDataStack.size() > 10 && !m_enableDataMutex)
+                    {
+                        m_dataMutex->lock();
+                        m_enableDataMutex = true;
+                        
+                        int m_tempDataStackSize = m_tempDataStack.size();
+                        for (int i = 0; i < m_tempDataStackSize; i++)
+                        {
+                            m_dataStack.push_back(m_tempDataStack[i]);
+                        }
+                        m_tempDataStack.clear();
+                        
+                        m_dataMutex->unlock();
+                    }
+                }
+            }
+            
+            // update target manager
+            if (m_useServer)
+                m_targetManager->updateTargetStates(m_robotTeam->getRobotPositions());
+            
+            // update robot sensors
+            vector<cVector3d> aTPos = m_targetManager->getActiveTargetPositions();
+            m_robotTeam->updateSensorReadings(aTPos);
+        }
+        
+        // for the single connected device
+        else if (m_numHapticDevices == 1)
+        {
+            /////////////////////////////////////////////////////////////////////
+            // SIMULATION TIME
+            /////////////////////////////////////////////////////////////////////
+            
+            // stop the simulation clock
+            clock.stop();
+            
+            // read the time increment in seconds
+            double timeInterval = clock.getCurrentTimeSeconds();
+            
+            // store measured time interval between iterations
+            if (m_checkTimeIntervals)
+            {
+                m_timeIntervals.push_back(timeInterval);
+            }
+            
+            // set max time interval for playdoh dynamics
+            if (timeInterval > 0.001) { timeInterval = 0.001; }
+            
+            // restart the simulation clock
+            clock.reset();
+            clock.start();
+            
+            /////////////////////////////////////////////////////////////////////
+            // HAPTIC FORCE COMPUTATION
+            /////////////////////////////////////////////////////////////////////
+            
+            // compute global reference frames for each object
+            m_world->computeGlobalPositions(true);
+            
+            // update position and orientation of tool
+            m_tool->updateFromDevice();
+            
+            // compute interaction forces
+            m_tool->computeInteractionForces();
+            
+            // get interaction forces magnitude
+            double toolForce = m_tool->getDeviceGlobalForce().length();
+            
+            //cout << toolForce << endl;
+            
+            // read position from haptic device
+            cVector3d pos = m_tool->getDeviceGlobalPos();
+            
+            if (m_showToolPos)
+            {
+                //m_tools[i]->getHapticDevice()->getPosition(pos);
+                std::cout << pos << std::endl;
+            }
+            
+            // set device pos vector
+            m_devicePos = pos;
+            
+            //---------------------------------------------------
+            // User buttons
+            //---------------------------------------------------
+            
+            /// Resize routine
+            //----------------------------------------------------------------
+            // if user switch 1 is pressed, resize the cordon
+            if (useButtons && m_tool->getUserSwitch(1))
+            {
+                //cout << "switch 1" << endl;
+                resizeButton = true;
+            }
+            else resizeButton = false;
+            
+            // if the user has started pressing the resize button, begin resizing
+            if (resizeButton && !prevResizeButton)
+            {
+                //m_playdoh->setEnableResizeCordon(true);
+                
+                // set tool start position
+                resizeToolStartPos = pos;
+                
+                // reset percentage
+                m_resizePercentage = 1.00;
+            }
+            // else if the user has released the resize button, stop resizing
+            else if (!resizeButton && prevResizeButton)
+            {
+                //m_playdoh->setEnableResizeCordon(false);
+                
+                // resize the minimum distance between agents
+                m_com->radius(m_radiusPriority, 0, m_AIRadius);
+                m_radiusPriority++;
+            }
+            
+            
+            
+            /// Command patrol routine
+            //----------------------------------------------------------------
+            
+            // if user switch 2 is pressed, enable command patrol button
+            if (useButtons && m_tool->getUserSwitch(2))
+            {
+                //cout << "switch 2" << endl;
+                commandPatrolButton = true;
+            }
+            else commandPatrolButton = false;
+            
+            bool commandAll = false;
+            
+            // if the user has started pressing the command patrol button, begin commanding patrol
+            if (commandPatrolButton && !prevCommandPatrolButton)
+            {
+                // set tool start position
+                patrolToolStartPos = pos;
+            }
+            // if the user has released the command patrol button, start the command
+            else if (!commandPatrolButton && prevCommandPatrolButton)
+            {
+                // start patrol color counter
+                //patrolColorCounter = 0.0;
+                
+                // compute patrol direction and magnitude
+                cVector3d dir = pos - patrolToolStartPos;
+                dir.z(0); // force zero z
+                double scaleDir = 1.0;
+                dir = scaleDir*dir;
+                
+                if (commandAll)
+                {
+                    for (int k = 0; k < m_com->swarm()->agents_size(); ++k)
+                    {
+                        comm::Swarm_Agent current = m_com->swarm()->agents(k);
+                        m_com->patrol(m_patrolCount, current.id(), dir.x(), dir.y(), dir.z());
+                    }
+                    m_patrolCount++;
+                    
+                    // set whole team color
+                    //m_robotTeam->setRobotColors(cColorf(0, 0, 0));
+                }
+                else
+                {
+                    
+                    // the find the agent nearest the direction of interest
+                    int patrol_id = 0;
+                    int patrol_id2 = 1;
+                    int index = 0;
+                    int index2 = 1;
+                    
+                    // command from cordon mode
+                    if (m_distributionType == 1 && !m_cordonIds.empty())
+                    {
+                        // trusting the ids and m_robotPositions order
+                        patrol_id = m_cordonIds[index];
+                        patrol_id2 = m_cordonIds[index2];
+                        for (unsigned int k = 0; k < m_cordonIds.size(); ++k)
+                        {
+                            if ((patrolToolStartPos - m_robotPositions[k]).length() < (patrolToolStartPos - m_robotPositions[index]).length())
+                            {
+                                // set second closest id
+                                index2 = index;
+                                patrol_id2 = patrol_id;
+                                
+                                // set closest id
+                                index = k;
+                                patrol_id = m_cordonIds[index];
+                            }
+                            else if ((patrolToolStartPos - m_robotPositions[k]).length() < (patrolToolStartPos - m_robotPositions[index2]).length())
+                            {
+                                // set second closest id
+                                if (index != k)
+                                {
+                                    index2 = k;
+                                    patrol_id2 = m_cordonIds[index2];
+                                }
+                            }
+                        } // end for loop on m_cordonIds
+                        
+                    }
+                    // command from patrol mode
+                    else if (m_distributionType == 0 && !m_ids.empty())
+                    {
+                        //vector<int> patrolIds;
+                        
+                        //m_com->pause();
+                        //unsigned int num_agents = m_com->swarm()->agents_size();
+                        
+                        //for (unsigned int i = 0; i < num_agents; ++i) {
+                        //	comm::Swarm_Agent current = m_com->swarm()->agents(i);
+                        //	patrolIds.push_back(current.id());
+                        //}
+                        //m_com->unpause();
+                        
+                        // trusting the m_ids and m_robotPositions order
+                        patrol_id = m_ids[index];
+                        patrol_id2 = m_ids[index2];
+                        for (unsigned int k = 0; k < m_ids.size(); ++k)
+                        {
+                            if ((patrolToolStartPos - m_robotPositions[k]).length() < (patrolToolStartPos - m_robotPositions[index]).length())
+                            {
+                                // set second closest id
+                                patrol_id2 = patrol_id;
+                                index2 = index;
+                                
+                                // set closest id
+                                index = k;
+                                patrol_id = m_ids[index];
+                            }
+                            else if ((patrolToolStartPos - m_robotPositions[k]).length() < (patrolToolStartPos - m_robotPositions[index2]).length())
+                            {
+                                // set second closest id
+                                if (index != k)
+                                {
+                                    index2 = k;
+                                    patrol_id2 = m_ids[index2];
+                                }
+                            }
+                        } // end for loop on m_ids
+                        
+                    }
+                    
+                    // print out agents being commanded to lead patrol
+                    //std::cout << "Local method:" << std::endl;
+                    //std::cout << "id 1: " << patrol_id << " - pos: " << m_robotPositions[index] << std::endl;
+                    //std::cout << "id 2: " << patrol_id2 << " - pos: " << m_robotPositions[index2] << std::endl;
+                    
+                    //// attempt to light up the robots that are leading
+                    //m_robotTeam->getRobot(patrol_id)->setColor(cColorf(0, 0, 0));
+                    //m_robotTeam->getRobot(patrol_id2)->setColor(cColorf(0, 0, 0));
+                    
+                    // command the patrol
+                    cVector3d patrolDir1 = pos - m_robotTeam->getRobot(patrol_id)->getLocalPos();
+                    patrolDir1.z(0);
+                    cVector3d patrolDir2 = pos - m_robotTeam->getRobot(patrol_id2)->getLocalPos();
+                    patrolDir2.z(0);
+                    
+                    if (m_useServerThread)
+                    {
+                        m_commandedPatrolDir1 = patrolDir1;
+                        m_commandedPatrolDir2 = patrolDir2;
+                        m_patrolId1 = patrol_id;
+                        m_patrolId2 = patrol_id2;
+                    }
+                    else
+                    {
+                        m_com->patrol(m_patrolCount, patrol_id, patrolDir1.x(), patrolDir1.y(), patrolDir1.z());
+                        m_patrolCount++;
+                        
+                        m_com->patrol(m_patrolCount, patrol_id2, patrolDir2.x(), patrolDir2.y(), patrolDir2.z());
+                        m_patrolCount++;
+                    }
+                    
+                    // change AI radius to reasonable value
+                    //double patrolRadiusScale = 0.5;
+                    //m_AIRadius = patrolRadiusScale*m_AIRadius;
+                    
+                    //m_gravityManager->resetGravity();
+                    
+                    m_manipCompleted = false;
+                    
+                    m_AIRadius = 5;
+                    
+                    if (m_useServerThread)
+                    {
+                        m_serverAIRadius = m_AIRadius;
+                    }
+                    else
+                    {
+                        m_com->radius(m_radiusPriority, 0, m_AIRadius);
+                        m_radiusPriority++;
+                    }
+                    
+                    m_patrolCommanded = true;
+                    
+                    // if adjusting radius from previous patrol movement, reset
+                    increaseRadius = false;
+                }
+                
+                // set to patrol mode
+                m_distributionType = 0;
+            }
+            
+            //----------------------------------------------------------------
+            /// End command patrol routine
+            
+            // if user switch 0 is pressed, user can manipulate the cordon with server off
+            if (useButtons && m_tool->getUserSwitch(0))
+            {
+                //cout << "switch 0" << endl;
+                
+                manipButton = true;
+            }
+            else manipButton = false;
+            
+            if (useButtons && m_tool->getUserSwitch(3))
+            {
+                //cout << "switch 3" << endl;
+                
+                // handle first case
+                manipButton = true;
+                if (m_manipCompleted)
+                {
+                    manipSpacing = true;
+                    
+                }
+            }
+            else manipSpacing = false;
+            
+            // if user switch 0 is pressed, user can manipulate the cordon with server off
+            if ((manipButton /*|| (m_playdoh->insideBoundingBox(pos) && m_distributionType == 1)*/ || resizeButton)
+                && !m_cordonStarted)
+            {
+                //m_useServer = false;
+            }
+            else
+            {
+                //m_useServer = true;
+            }
+            
+            // if the user has started pressing the manip button,
+            if (manipButton && !prevManipButton)
+            {
+                // set tool start position
+                manipToolStartPos = pos;
+                
+                // show playdoh robot team
+                if (m_testing)
+                    m_playdohRobotTeam->setShowEnabled(true);
+                
+                // store robot positions before manipulation (in id order)
+                m_prevManipPositions = m_robotTeam->getRobotPositions();
+                
+                // start monitoring for gravity well creation
+                if (!m_cordonIds.empty())
+                    gravityWellMonitor = true;
+            }
+            // if the user has released the manip button, or manipulating spacing
+            else if (!manipButton && prevManipButton)
+            {
+                // hide playdoh robot team
+                if (m_testing)
+                    m_playdohRobotTeam->setShowEnabled(false);
+                
+                // end monitoring for gravity wells
+                gravityWellMonitor = false;
+                
+                // flag for manip completed
+                m_manipCompleted = true;
+                
+                // store manipulated desired positions
+                m_manipCompletedPositions = m_playdohRobotTeam->getRobotPositions();
+                
+            }
+            
+            //// if user manipulating playdoh, fix robot nodes within a radius defined by playdoh perimeter
+            //if (manipButton)
+            //{
+            //	m_playdoh->setFixedNodes_Radius(pos);
+            //	int numNeighbors = 2;
+            //	m_playdoh->setFixedNodes_Neighbors(numNeighbors);
+            //}
+            
+            // if threads aren't used, update gravity wells here
+            if (!m_useThreads)
+            {
+                
+                int manipId;
+                // add gravity wells
+                if (gravityWellMonitor)
+                {
+                    //std::cout << "GravityWellMonitor" << std::endl;
+                    
+                    // find the nearest agent to the current device position
+                    // this agent becomes the lead agent in the manipulation
+                    manipId = findNearestAgent(pos, false);
+                    
+                    //std::cout << "Nearest agent:" << manipId << std::endl;
+                    
+                    // previous position of this robot (before manipulation)
+                    cVector3d prevPos = m_prevManipPositions[manipId];
+                    
+                    // current position of this robot (after manipulation)
+                    cVector3d curPos = m_playdohRobotTeam->getRobot(manipId)->getLocalPos();
+                    
+                    // placement factor
+                    double manipFactor = 1.5;
+                    
+                    // global location for gravity well
+                    //cVector3d gwLoc = prevPos + manipFactor*(curPos - prevPos);
+                    
+                    // relative to cursor position
+                    cVector3d gwLoc = pos + manipFactor*(curPos - pos);
+                    
+                    //// relative location to nearest agent
+                    //gwLoc = gwLoc - m_robotTeam->getRobot(manipId)->getLocalPos();
+                    gwLoc.z(0); // force to lie in xy plane
+                    
+                    
+                    double sigma = 2.0;
+                    double strength = 1.0;
+                    bool isPathWell = true;
+                    
+                    // user disconnects from manipulating cordon playdoh
+                    if (m_playdoh->getPrevContactState() && !m_playdoh->getContactState())
+                    {
+                        if (m_useGravityWells)
+                        {
+                            if (m_useWallMethod)
+                            {
+                                cVector3d heading = cNormalize(pos - prevToolPos);
+                                heading.z(0);
+                                int numWallWells = 5;
+                                double wallLength = 3 * m_deviceRadius;
+                                double repulsiveSigma = 3;
+                                double repulsiveStrength = -10;
+                                double attractiveSigma = 3;
+                                double attractiveStrength = 10;
+                                m_gravityManager->updateWells_WallMethod(pos, heading, false, manipId, numWallWells, wallLength, 2 * m_deviceRadius,
+                                                                       repulsiveSigma, repulsiveStrength, attractiveSigma, attractiveStrength);
+                                
+                            }
+                            else if (m_useRepulsiveGravityWells)
+                            {
+                                m_gravityManager->updateRepulsiveWells(m_playdohRobotPositions, m_playdoh->getCenterOfMass(), pos, m_deviceRadius);
+                                
+                            }
+                            else
+                            {
+                                isPathWell = false;
+                                
+                                // set desired wells in the gravity manager (as a baseline)
+                                vector<cVector3d> serverPositions = idOrder2CordonOrderPositions(m_robotTeam->getRobotPositions());
+                                m_gravityManager->updateWellsFromPositions(serverPositions, m_playdohRobotPositions, m_cordonIds, isPathWell, sigma, strength);
+                            }
+                        }
+                    }
+                    
+                    
+                    // update gravity wells when in contact with playdoh
+                    if (m_playdoh->getContactState())
+                    {
+                        if (m_useGravityWells)
+                        {
+                            if (m_useWallMethod)
+                            {
+                                //cVector3d heading = cNormalize(m_tools[i]->m_deviceGlobalVel);
+                                //int numWallWells = 5;
+                                //double wallLength = 3 * m_deviceRadius;
+                                //double repulsiveSigma = 3;
+                                //double repulsiveStrength = -10;
+                                //double attractiveSigma = 3;
+                                //double attractiveStrength = 10;
+                                //m_gravityManager->updateWells_WallMethod(pos, heading, false, manipId, numWallWells, wallLength, 2 * m_deviceRadius,
+                                //	repulsiveSigma, repulsiveStrength, attractiveSigma, attractiveStrength);
+                            }
+                            else if (m_useRepulsiveGravityWells)
+                            {
+                                m_gravityManager->updateRepulsiveWells(m_playdohRobotPositions, m_playdoh->getCenterOfMass(), pos, m_deviceRadius);
+                                
+                            }
+                            else
+                            {
+                                // set desired wells in the gravity manager (as a baseline)
+                                vector<cVector3d> serverPositions = idOrder2CordonOrderPositions(m_robotTeam->getRobotPositions());
+                                m_gravityManager->updateWellsFromPositions(serverPositions, m_playdohRobotPositions, m_cordonIds, isPathWell, sigma, strength);
+                            }
+                        }
+                        
+                    }
+                    
+                }
+                
+                // for each iteration, allow the world to delete a child that is marked for deletion in it's list of children
+                if (m_useGravityWells)
+                {
+                    //m_gravityManager->deleteAWell();
+                    m_gravityManager->deleteAllWellsToDelete();
+                }
+                
+            }
+            // multiple threads are used, so update gravity wells here
+            else
+            {
+                if (!m_enableGWMutex)
+                {
+                    m_dataMutex->lock();
+                    
+                    // set variables to be used in separate gravity well creation thread
+                    m_gwMonitor = gravityWellMonitor;
+                    m_gwContactState = m_playdoh->getContactState();
+                    m_gwPrevContactState = m_playdoh->getPrevContactState();
+                    m_gwDevicePos = pos;
+                    m_gwPrevDevicePos = prevToolPos;
+                    m_gwPlaydohRobotPositions = m_playdohRobotPositions;
+                    m_gwCenterOfMass = m_playdoh->getCenterOfMass();
+                    m_gwRobotTeamPositions = m_robotTeam->getRobotPositions();
+                    m_gwCordonIds = m_cordonIds;
+                    
+                    m_enableGWThreadVariables = true; // make gw variables valid
+                    
+                    m_enableGWMutex = true;
+                    m_dataMutex->unlock();
+                }
+            }
+            
+            //---------------------------------------------------
+            // Retrieve information from robot distribution methods
+            //---------------------------------------------------
+            retrieveRobotData(manipButton);
+            
+            //---------------------------------------------------
+            // Haptic methods
+            //---------------------------------------------------
+            
+            // initialize zero force
+            cVector3d force;
+            force.zero();
+            
+            // if the user is commanding a patrol, compute the patrol force
+            if (commandPatrolButton)
+            {
+                // compute tool force (virtual spring)
+                double kv = 2.0;
+                cVector3d patrolForce;
+                patrolForce = -(kv / m_virtualWorkspaceRadius) * (pos - patrolToolStartPos);
+                patrolForce.z(0);
+                
+                // compute tool force (damping)
+                double patrolB = m_maxDamping;
+                cVector3d linearVelocity;
+                m_tool->getHapticDevice()->getLinearVelocity(linearVelocity);
+                cVector3d forceD = cMul(patrolB, cVector3d(-linearVelocity.y(), -linearVelocity.z(), -linearVelocity.x())); // I think
+                //patrolForce.add(forceD);
+                
+                // add additional force to calculated force from tool
+                m_tool->addDeviceGlobalForce(patrolForce);
+            }
+            
+            // if the user is resizing, compute that force
+            else if (resizeButton)
+            {
+                double posVariance = 0.01;
+                double negVariance = 0.01;
+                double variance;
+                //m_resizePercentage = m_resizePercentage + 0.000001 * (pos.z() - resizeToolStartPos.z())*(120 / m_virtualWorkspaceRadius);
+                if ((pos.z() - resizeToolStartPos.z()) >= 0)
+                {
+                    variance = posVariance;
+                }
+                else variance = negVariance;
+                
+                m_resizePercentage = 1.0 + variance * (pos.z() - resizeToolStartPos.z()) / m_virtualWorkspaceRadius;
+                
+                m_AIRadius = m_AIRadius*m_resizePercentage;
+                
+                //std::cout << m_virtualWorkspaceRadius << std::endl;
+                m_playdoh->setResizePercentage(m_resizePercentage);
+                //std::cout << resizeToolStartPos.z() << std::endl;
+                
+                // store previous z value
+                prevToolZ = pos.z();
+                
+                // compute tool force (virtual spring)
+                double kv = 12.0;
+                cVector3d resizeForce;
+                resizeForce = cVector3d(0.0, 0.0, -kv*(pos.z() - resizeToolStartPos.z()) / m_virtualWorkspaceRadius);
+                
+                // compute tool force (damping)
+                double resizeB = m_maxDamping;
+                cVector3d linearVelocity;
+                m_tool->getHapticDevice()->getLinearVelocity(linearVelocity);
+                cVector3d forceD = cMul(resizeB, cVector3d(-linearVelocity.y(), -linearVelocity.z(), -linearVelocity.x()));
+                resizeForce.add(forceD);
+                
+                // add resize force to tool force
+                m_tool->addDeviceGlobalForce(resizeForce);
+                
+                // needed for node updating, but not to retrieve feedback force
+                double modFactor = 1.0;
+                cVector3d playdohForce = m_playdoh->computeForce(pos, m_deviceRadius, 0, modFactor, manipButton, manipSpacing);
+                m_playdoh->updateDynamics(timeInterval);
+            }
+            else
+            {
+                int nearestIndex = getNearestCordonIndex(pos);
+                double modFactor = 0.2;
+                // update playdoh
+                cVector3d playdohForce = m_playdoh->computeForce(pos, m_deviceRadius, nearestIndex, modFactor, manipButton, manipSpacing);
+                force.add(playdohForce);
+                
+                m_playdoh->updateDynamics(timeInterval);
+                
+                // add haptic device weight compensation
+                //force.add(cVector3d(0.0, 3.0, 0.0));
+                
+                // add manually added ground stiffness
+                //cVector3d groundForce;
+                //groundForce.zero();
+                //double penetrationDist = (pos.z() - m_deviceRadius);
+                //groundForce.z(0.005 * penetrationDist);
+                //force.add(groundForce);
+                
+                //std::cout << force << std::endl;
+                
+                //// add damping if near playdoh surface
+                //if (m_playdoh->insideBoundingBox(pos))
+                //{
+                //	double resizeB = 10.0;
+                //	cVector3d linearVelocity;
+                //	m_tools[i]->getHapticDevice()->getLinearVelocity(linearVelocity);
+                //	cVector3d forceD = cMul(resizeB, linearVelocity);
+                //	force.add(forceD);
+                //	std::cout << forceD.length() << std::endl;
+                //}
+                
+                cVector3d linearVelocity;
+                m_tool->getHapticDevice()->getLinearVelocity(linearVelocity);
+                //std::cout << linearVelocity << std::endl;
+                
+                // scale force based on m_virtualWorkspaceRadius, to adjust magnitude of force to several workspace scale factors
+                if (m_distributionType == 0)
+                {
+                    // patrol force adjustment
+                    force = (35 / m_virtualWorkspaceRadius)*force; // (hcval)
+                    cVector3d toolVel(m_tool->getWorkspaceScaleFactor() * m_tool->getDeviceLocalLinVel());
+                    
+                    //std::cout << toolVel.length() / m_toolWorkspaceScaleFactor << std::endl;
+                    
+                    //if (m_playdoh->insideBoundingBox(pos) && toolVel.length() / m_toolWorkspaceScaleFactor > 0.3)
+                    //{
+                    //	//std::cout << force.length() << "  ";
+                    
+                    //	//cVector3d forceD = cMul(0.75*m_maxDamping, cVector3d(-linearVelocity.y(), -linearVelocity.z(), -linearVelocity.x()));
+                    //	cVector3d forceD = cMul(1.0*m_maxDamping, -1*toolVel);
+                    //	force.add(forceD);
+                    
+                    //	//std::cout << force.length() << std::endl;
+                    //}
+                }
+                else if (m_distributionType == 1)
+                {
+                    // cordon force adjustment
+                    force = 1.00*force;
+                }
+                // add additional force to calculated force from tool
+                m_tool->addDeviceGlobalForce(force);
+                
+                //tools[i]->m_lastComputedGlobalForce = force;
+            }
+            
+            //cout << force << endl;
+            
+            // send forces to haptic device
+            m_tool->applyToDevice();
+            
+            // check swarm mode for radius adjustment
+            if (prevSwarmModeInt == 0 && m_swarmModeInt == 1)
+            {
+                increaseRadius = true;
+            }
+            
+            if (increaseRadius)
+            {
+                // changed mode from patrol to cordon, so increase swarm radius
+                m_AIRadius = 1.01*m_AIRadius;
+                m_com->radius(m_radiusPriority, 0, m_AIRadius);
+                m_radiusPriority++;
+                
+                double maxRadius = 40;
+                if (m_AIRadius > maxRadius)
+                {
+                    m_AIRadius = maxRadius;
+                    increaseRadius = false;
+                }
+            }
+            
+            if (m_showPerim)
+            {
+                std::cout << m_playdoh->getPerimeter() << std::endl;
+            }
+            
+            if (m_showK)
+            {
+                std::cout << m_playdoh->getSpringStiffness() << std::endl;
+            }
+            
+            //---------------------------------------------------
+            // Send information to robot distribution methods on the server
+            //---------------------------------------------------
+            
+            // extract new robot positions from playdoh model when user is manipulating playdoh
+            m_playdohRobotPositions = m_playdoh->getRobotPositions();
+            
+            // account for manipulation
+            if (manipButton)
+            {
+                double playdohManipRadius = 0.25*m_playdoh->getPerimeter();
+                //setPlaydohRobotPositions_Radius(playdohManipRadius, manipId);
+                
+                // set which robots are shown
+                //setPlaydohRobotTeamShow_Radius(playdohManipRadius, manipId);
+            }
+            else
+            {
+                //m_playdohRobotTeam->setShowEnabled(true);
+            }
+            
+            // collect data
+            if (m_useDataCollection)
+            {
+                // if threads aren't used, collect data here
+                if (!m_useThreads)
+                {
+                    // data collection and write to file
+                    m_dataManager->collectAndWriteData(pos, force, m_robotTeam->getRobotPositions());
+                }
+                else
+                {
+                    // collect data at a sample rate set by m_dataManager
+                    cData data = m_dataManager->collectData(pos, force, m_robotTeam->getRobotPositions());
+                    if (data.getValid())
+                    {
+                        m_tempDataStack.push_back(data);
+                    }
+                    
+                    if (m_tempDataStack.size() > 10 && !m_enableDataMutex)
+                    {
+                        m_dataMutex->lock();
+                        m_enableDataMutex = true;
+                        
+                        int m_tempDataStackSize = m_tempDataStack.size();
+                        for (int i = 0; i < m_tempDataStackSize; i++)
+                        {
+                            m_dataStack.push_back(m_tempDataStack[i]);
+                        }
+                        m_tempDataStack.clear();
+                        
+                        //std::cout << "data being added" << std::endl;
+                        
+                        m_dataMutex->unlock();
+                    }
+                }
+            }
+            
+            // update target manager
+            if (m_useServer)
+                m_targetManager->updateTargetStates(m_robotTeam->getRobotPositions());
+            
+            // update robot sensors
+            vector<cVector3d> aTPos = m_targetManager->getActiveTargetPositions();
+            m_robotTeam->updateSensorReadings(aTPos);
+        }
+        
+        // set previous resize button for next iteration
+        prevResizeButton = resizeButton;
+        
+        // set previous command patrol button for next iteration
+        prevCommandPatrolButton = commandPatrolButton;
+        
+        // set previous manip button for next iteration
+        prevManipButton = manipButton;
+        
+        prevSwarmModeInt = m_swarmModeInt;
+        
+        prevToolPos = m_devicePos;
+        
+        
+        // update frequency counter
+        m_frequencyCounter.signal(1);
+    }
+    
+    // exit haptics thread
+    m_simulationFinished = true;
+}
+
+//------------------------------------------------------------------------------
+
+void rtsApplication::retrieveRobotData(bool a_manipButton)
+{
+    if (m_useServer)
+    {
+        comm::Swarm thisSwarm;
+        bool serverUpdate = false;
+        bool newSwarm = false;
+        if (m_useServerThread)
+        {
+            // retrieve the swarm from server
+            if (!m_enableQueryMutex)
+            {
+                if (m_isNewSwarm)
+                {
+                    m_queryMutex->lock();
+                    m_enableQueryMutex = true;
+                    
+                    // get swarm
+                    thisSwarm = *m_swarm;
+                    
+                    // get swarm mode
+                    m_swarmModeInt = checkSwarmMode(&thisSwarm);
+                    
+                    m_isNewSwarm = false;
+                    
+                    m_serverManipButton = a_manipButton;
+                    m_serverManipCompleted = m_manipCompleted;
+                    m_serverPatrolCommanded = m_patrolCommanded;
+                    m_serverPatrolDir1 = m_commandedPatrolDir1;
+                    m_serverPatrolDir2 = m_commandedPatrolDir2;
+                    m_serverPatrolId1 = m_patrolId1;
+                    m_serverPatrolId2 = m_patrolId2;
+                    m_serverAIRadius = m_AIRadius;
+                    
+                    // if team is being manipulated, or has been since the last patrol command
+                    if (a_manipButton)
+                    {
+                        m_serverDesiredPositions = m_playdohRobotTeam->getRobotPositions();
+                        m_serverCurrentPositions = m_robotTeam->getRobotPositions();
+                    }
+                    else if (m_manipCompleted)
+                    {
+                        m_serverDesiredPositions = m_manipCompletedPositions;
+                        m_serverCurrentPositions = m_robotTeam->getRobotPositions();
+                    }
+                    
+                    
+                    m_queryMutex->unlock();
+                    
+                    serverUpdate = true;
+                }
+            }
+            
+        }
+        else
+        {
+            // query server at a certain frequency
+            if (m_serverTimer.timeoutOccurred())
+            {
+                m_swarm = m_com->swarm();
+                thisSwarm = *m_swarm;
+                m_swarmModeInt = checkSwarmMode(&thisSwarm);
+                
+                serverUpdate = true;
+                m_serverTimer.reset();
+                m_serverTimer.start();
+            }
+            
+            if (a_manipButton)
+            {
+                //cout << "updateForces" << endl;
+                
+                // update controller
+                m_controller->updateForces(m_playdohRobotTeam->getRobotPositions(),
+                                         m_robotTeam->getRobotPositions());
+            }
+        }
+        
+        // if the server is set to update this iteration
+        if (serverUpdate)
+        {
+            
+            //std::cout << "cycle: " << thisSwarm.cycle() << " " << "swarm mode: " << m_swarmModeInt << std::endl;
+            
+            m_swarmRadius = thisSwarm.radius();
+            //std::cout << "radius from swarm: " << m_swarmRadius << std::endl;
+            
+            auto cycle = thisSwarm.cycle();
+            bool boolCycle = !cycle.empty();
+            
+            
+            // if patrol has been commanded this iteration, cycle is not found
+            if (m_patrolCommanded)
+            {
+                m_foundCycle = false;
+            }
+            
+            // if a cycle has already been found,
+            if (m_foundCycle)
+            {
+                // no patrol has been commanded
+                m_spanningCycle = true;
+                
+            }
+            // else if patrol not commanded and server finds a cycle,
+            else if (!m_patrolCommanded && boolCycle && m_swarmModeInt == 1)
+            {
+                if (m_cycleCounter.timeoutOccurred()) //hcval
+                {
+                    m_spanningCycle = true;
+                    m_foundCycle = true;
+                    m_cycleCounter.reset();
+                    m_cycleCounter.start();
+                }
+            }
+            else
+            {
+                m_spanningCycle = false;
+                m_cycleCounter.reset();
+                m_cycleCounter.start();
+            }
+            
+            if (m_patrolCommanded)
+            {
+                // reset m_patrolCommanded
+                m_patrolCommanded = false;
+            }
+            
+            //std::cout << "m_foundCycle: " << m_foundCycle << " " << "spanningCycle: " << spanningCycle << std::endl;
+            
+            
+            if (m_spanningCycle)
+            {
+                
+                // if switching from patrol mode to cordon mode
+                // cordon Ids should be empty if making this switch
+                if (m_distributionType == 0 && !m_cordonStarted)
+                {
+                    // set the ids for this cordon
+                    setCordonIds(&thisSwarm);
+                    
+                    // on first iteration
+                    m_cordonIter1 = true;
+                    
+                    //std::cout << "CordonId:" << std::endl;
+                    
+                    //printVector(m_cordonIds);
+                    
+                    m_cordonStarted = true;
+                }
+                
+                if (m_cordonStarted)
+                {
+                    // set to cordon distribution type
+                    m_distributionType = 1;
+                    
+                    // reset cordon started
+                    m_cordonStarted = false;
+                }
+                
+                // call server function to query agent locations
+                m_robotPositions = swarm2Vec_IdCheck(&thisSwarm);
+                
+            }
+            else
+            {
+                //std::cout << "patrol mode" << std::endl;
+                
+                // set distribution type to patrol mode
+                m_distributionType = 0;
+                
+                // clear cordon idsk
+                m_cordonIds.clear();
+                
+                // set agent ids while in patrol mode
+                //setAgentIds(thisSwarm);
+                
+                //printVector(m_ids);
+                
+                // call server function to query agent locations, and set id order
+                m_robotPositions = swarm2Vec(&thisSwarm);
+            }
+            
+            // retrieve raw robot positions from server
+            m_rawRobotPositions = swarm2Vec(&thisSwarm);
+            
+            // set colors according to mode type
+            //setAgentModeColors(&thisSwarm);
+            
+        } // end of server update
+        
+    } // end of use server
+    
+    // set distribution mode (0 - patrol, 1 - cordon, 2 - patrol and cordon)
+    m_robotTeam->setDistributionMode(m_distributionType);
+    
+    if (m_distributionType == 1)
+    {
+        m_robotTeam->setRobotPositions(m_robotPositions, m_cordonIds);
+        //printVector(m_cordonIds);
+        
+        // set playdoh robot team positions
+        m_playdohRobotTeam->setRobotPositions(m_playdohRobotPositions, m_cordonIds);
+    }
+    else if (m_distributionType == 0)
+    {
+        m_robotTeam->setRobotPositions(m_robotPositions, m_ids);
+        //printVector(m_ids);
+    }
+    
+    //std::cout << m_distributionType << std::endl;
+    
+    if (m_showConvexHull)
+    {
+        // set convex hull properties
+        m_robotTeam->updateConvexHullLines();
+    }
+    
+    // set convex hull in playdoh
+    m_playdoh->setConvexHull(m_robotTeam->getConvexHull());
+    m_playdoh->setConvexHullMapping(m_robotTeam->getConvexHullMapping());
+    
+    //printVector(m_robotTeam->getConvexHullMapping());
+    
+    // if in the process of creating a new cordon
+    if (m_cordonIter1 || m_cordonIter2)
+    {
+        // update agent positions in playdoh model before applying dynamics
+        if (!a_manipButton)
+            m_playdoh->updateRobotPositions(m_robotPositions);
+        //else m_playdoh->updateRobotPositions(m_playdohRobotPositions);
+        
+        // set distribution mode (0 - patrol, 1 - cordon, 2 - patrol and cordon)
+        // (this is where playdoh haptics are initialized for each mode)
+        // this must be set AFTER updateRobotPositions is called, due to standby mode skipping until next iteration!!
+        m_playdoh->setDistributionMode(m_distributionType);
+        
+        // update agent positions in playdoh model before applying dynamics
+        // for some reason, this is needed after setting distribution mode to create colors correctly
+        if (!a_manipButton)
+            m_playdoh->updateRobotPositions(m_robotPositions);
+        //else m_playdoh->updateRobotPositions(m_playdohRobotPositions);
+    }
+    else
+    {
+        //// update agent positions in playdoh model before applying dynamics
+        //if (!a_manipButton)
+        //	m_playdoh->updateRobotPositions(m_robotPositions);
+        //else m_playdoh->updateRobotPositions(m_playdohRobotPositions);
+        
+        // set distribution mode (0 - patrol, 1 - cordon, 2 - patrol and cordon)
+        // (this is where playdoh haptics are initialized for each mode)
+        // this must be set AFTER updateRobotPositions is called, due to standby mode skipping until next iteration!!
+        m_playdoh->setDistributionMode(m_distributionType);
+        
+        // update agent positions in playdoh model before applying dynamics
+        if (!a_manipButton)
+            m_playdoh->updateRobotPositions(m_robotPositions);
+        //else m_playdoh->updateRobotPositions(m_playdohRobotPositions);
+    }
+    
+    // cordon iteration reset
+    if (m_cordonIter1)
+    {
+        // on second iteration
+        m_cordonIter2 = true;
+        m_cordonIter1 = false;
+    }
+    else if (m_cordonIter2)
+    {
+        // reset both iteration sequences
+        m_cordonIter1 = false;
+        m_cordonIter2 = false;
+    }
+}
+
+vector<cVector3d> rtsApplication::swarm2Vec(comm::Swarm* a_swarm)
+{
+    // clear list of m_ids first
+    m_ids.clear();
+    
+    unsigned int num_agents = a_swarm->agents_size();
+    vector<cVector3d> positions(num_agents, cVector3d(0, 0, 0));
+    vector<int> a_ids(num_agents, 0);
+    
+    // store the ids in an ordered list
+    for (unsigned int i = 0; i < num_agents; ++i) {
+        comm::Swarm_Agent current = a_swarm->agents(i);
+        a_ids[current.id()] = current.id();
+        positions[current.id()] = cVector3d(current.x(), current.y(), 0); // force z to be zero!
+        
+        //if (current.id() == 0)
+        //{
+        //	std::cout << cVector3d(current.x(), current.y(), current.z()) << std::endl;
+        //}
+    }
+    
+    //printVector(m_ids);
+    
+    m_ids = a_ids;
+    return positions;
+}
+
+vector<cVector3d> rtsApplication::swarm2Vec_ValCheck(comm::Swarm* a_swarm)
+{
+    vector<cVector3d> positions;
+    
+    unsigned int num_agents = a_swarm->agents_size();
+    
+    for (unsigned int i = 0; i < num_agents; ++i) {
+        comm::Swarm_Agent current = a_swarm->agents(i);
+        positions.push_back(cVector3d(current.x(), current.y(), current.z()));
+        
+        // if the change in position is too large, keep the same position as before
+        double val = 1.0;
+        if (fabs(positions[i].x() - m_robotPositions[i].x()) > val
+            || fabs(positions[i].y() - m_robotPositions[i].y()) > val
+            || fabs(positions[i].y() - m_robotPositions[i].y()) > val)
+        {
+            positions.pop_back();
+            positions.push_back(m_robotPositions[i]);
+        }
+    }
+    
+    return positions;
+}
+
+vector<cVector3d> rtsApplication::swarm2Vec_IdCheck(comm::Swarm* a_swarm)
+{
+    // get ordered positions from server
+    vector<cVector3d> orderedPositions = swarm2Vec(a_swarm);
+    unsigned int num_agents = a_swarm->agents_size();
+    vector<cVector3d> positions(num_agents, cVector3d(0, 0, 0));
+    
+    // order them according to m_cordonIds
+    int numCordonIds = m_cordonIds.size();
+    for (int i = 0; i < numCordonIds; ++i)
+    {
+        positions[i] = orderedPositions[m_cordonIds[i]];
+    }
+    
+    return positions;
+}
+
+vector<cVector3d> rtsApplication::polygon2Vec(comm::PolygonList_Polygon* a_polygon)
+{
+    vector<cVector3d> positions;
+    
+    unsigned int num_points = a_polygon->vertices_size();
+    
+    for (unsigned int j = 0; j < num_points; ++j) {
+        comm::PolygonList_Polygon_Vertex vert = a_polygon->vertices(j);
+        positions.push_back(cVector3d(vert.x(), vert.y(), vert.z()));
+    }
+    
+    return positions;
+}
+
+comm::PolygonList_Polygon rtsApplication::vec2Polygon(vector<cVector3d> a_points)
+{
+    comm::PolygonList_Polygon poly;
+    return poly;
+}
+
+vector<vector<cVector3d>> rtsApplication::polygons2Vec(comm::PolygonList* a_polygons)
+{
+    vector<vector<cVector3d>> polygonPositions;
+    
+    unsigned int num_polygons = a_polygons->polygons_size();
+    
+    for (unsigned int i = 0; i < num_polygons; ++i) {
+        comm::PolygonList_Polygon poly = a_polygons->polygons(i);
+        
+        polygonPositions.push_back(polygon2Vec(&poly));
+    }
+    
+    return polygonPositions;
+}
+
+int rtsApplication::checkSwarmMode(comm::Swarm* a_swarm)
+{
+    unsigned int num_agents = a_swarm->agents_size();
+    
+    for (unsigned int i = 0; i < num_agents; ++i) {
+        comm::Swarm_Agent current = a_swarm->agents(i);
+        if (current.mode() == 2 || current.mode() == 3)
+        {
+            //std::cout << current.mode() << std::endl;
+            return 0;
+        }
+    }
+    
+    return 1;
+}
+
+void rtsApplication::setAgentIds(comm::Swarm* a_swarm)
+{
+    // clear list of ids first
+    m_ids.clear();
+    
+    // get number of agents
+    unsigned int num_agents = a_swarm->agents_size();
+    
+    for (unsigned int i = 0; i < num_agents; ++i) {
+        comm::Swarm_Agent current = a_swarm->agents(i);
+        m_ids.push_back(current.id());
+    }
+}
+
+void rtsApplication::setCordonIds(comm::Swarm* a_swarm)
+{
+    // clear list of ids first
+    m_cordonIds.clear();
+    
+    unsigned int num_agents = a_swarm->agents_size();
+    
+    for (unsigned int i = 0; i < num_agents; ++i) {
+        //comm::Swarm_Agent current = a_swarm->agents(i);
+        //m_cordonIds.push_back(current.id());
+        m_cordonIds.push_back(a_swarm->cycle(i));
+    }
+}
+
+void rtsApplication::printVector(vector<int> a_vector)
+{
+    for (unsigned int k = 0; k < a_vector.size(); k++)
+    {
+        std::cout << a_vector[k] << ", ";
+        if (k == a_vector.size() - 1)
+            std::cout << std::endl;
+    }
+}
+
+int rtsApplication::findNearestAgent(cVector3d a_pos, bool useServerPositions)
+{
+    int nearestId = 0;
+    int nearestIndex = 0;
+    
+    // command from cordon mode
+    if (m_distributionType == 1 && !m_cordonIds.empty())
+    {
+        // choose which vector to use
+        vector<cVector3d> positions;
+        if (useServerPositions)
+            positions = m_robotPositions;
+        else positions = m_playdohRobotPositions;
+        
+        // trusting the ids and m_robotPositions order
+        nearestId = m_cordonIds[nearestIndex];
+        for (unsigned int k = 0; k < m_cordonIds.size(); ++k)
+        {
+            if ((a_pos - positions[k]).length() < (a_pos - positions[nearestIndex]).length())
+            {
+                // set closest id
+                nearestIndex = k;
+                nearestId = m_cordonIds[nearestIndex];
+            }
+        }
+    }
+    else if (m_distributionType == 0 && !m_ids.empty())
+    {
+        nearestId = m_ids[nearestIndex];
+        for (unsigned int k = 0; k < m_ids.size(); ++k)
+        {
+            if ((a_pos - m_robotPositions[k]).length() < (a_pos - m_robotPositions[nearestIndex]).length())
+            {
+                // set closest id
+                nearestIndex = k;
+                nearestId = m_ids[nearestIndex];
+            }
+        }
+    }
+    
+    return nearestId;
+}
+
+int rtsApplication::findFarthestAgent(cVector3d a_pos, bool useServerPositions)
+{
+    int farthestId = 0;
+    int farthestIndex = 0;
+    
+    // command from cordon mode
+    if (m_distributionType == 1 && !m_cordonIds.empty())
+    {
+        // choose which vector to use
+        vector<cVector3d> positions;
+        if (useServerPositions)
+            positions = m_robotPositions;
+        else positions = m_playdohRobotPositions;
+        
+        // trusting the ids and m_robotPositions order
+        farthestId = m_cordonIds[farthestIndex];
+        for (unsigned int k = 0; k < m_cordonIds.size(); ++k)
+        {
+            if ((a_pos - positions[k]).length() >(a_pos - positions[farthestIndex]).length())
+            {
+                // set closest id
+                farthestIndex = k;
+                farthestId = m_cordonIds[farthestIndex];
+            }
+        }
+    }
+    else if (m_distributionType == 0 && !m_ids.empty())
+    {
+        farthestId = m_ids[farthestIndex];
+        for (unsigned int k = 0; k < m_ids.size(); ++k)
+        {
+            if ((a_pos - m_robotPositions[k]).length() >(a_pos - m_robotPositions[farthestIndex]).length())
+            {
+                // set closest id
+                farthestIndex = k;
+                farthestId = m_ids[farthestIndex];
+            }
+        }
+    }
+    
+    return farthestId;
+}
+
+void rtsApplication::setAgentModeColors(comm::Swarm* a_swarm)
+{
+    unsigned int num_agents = a_swarm->agents_size();
+    
+    // store the ids in an ordered list
+    for (unsigned int i = 0; i < num_agents; ++i) {
+        comm::Swarm_Agent current = a_swarm->agents(i);
+        
+        // set colors of each mode
+        cColorf cordonColor = cColorf(
+                                      0 / 256.0,
+                                      85 / 256.0,
+                                      256 / 256.0, 1);
+        cColorf surroundColor = cColorf(
+                                        255 / 256.0,
+                                        0 / 256.0,
+                                        0 / 256.0, 1);
+        cColorf patrolLeadColor = cColorf(
+                                          255 / 256.0,
+                                          128 / 256.0,
+                                          0 / 256.0, 1);
+        cColorf patrolFollowColor = cColorf(
+                                            254 / 256.0,
+                                            254 / 256.0,
+                                            0 / 256.0, 1);
+        
+        if (m_cordonIds.empty())
+        {
+            // set the mode color for current agent
+            if (current.mode() == 1)
+                m_robotTeam->getRobot(current.id())->setColor(surroundColor);
+            else if (current.mode() == 2)
+                m_robotTeam->getRobot(current.id())->setColor(patrolLeadColor);
+            else if (current.mode() == 3)
+                m_robotTeam->getRobot(current.id())->setColor(patrolFollowColor);
+        }
+        else
+        {
+            m_robotTeam->getRobot(current.id())->setColor(cordonColor);
+            //printf("cordonColor %f, %f, %f,\n", cordonColor.getR(), cordonColor.getG(), cordonColor.getB());
+        }
+    }
+}
+
+void rtsApplication::setPlaydohRobotPositions_Radius(double a_radius, int a_manipId)
+{
+    // if agents are within a certain radius of a_manipId, don't update using playdohRobotPositions
+    // and use robotPositions from server
+    
+    int manipIndex = m_cordonIds[a_manipId];
+    
+    vector<cVector3d> playdohPositions = m_playdohRobotPositions;
+    
+    int numPRobotPositions = m_playdohRobotPositions.size();
+    for (int i = 0; i < numPRobotPositions; ++i)
+    {
+        if (cDistance(m_playdohRobotPositions[manipIndex], m_playdohRobotPositions[i]) > a_radius)
+        {
+            m_playdohRobotPositions[i] = m_robotPositions[i];
+            std::cout << "playdohRobotPosition set to robotPosition" << std::endl;
+        }
+    }
+}
+
+void rtsApplication::setPlaydohRobotTeamShow_Radius(double a_radius, int a_manipId)
+{
+    int manipIndex = m_cordonIds[a_manipId];
+    
+    int numPRobotPositions = m_playdohRobotPositions.size();
+    for (int i = 0; i < numPRobotPositions; ++i)
+    {
+        if (cDistance(m_playdohRobotPositions[manipIndex], m_playdohRobotPositions[i]) > a_radius)
+        {
+            m_playdohRobotTeam->setShowEnabled(false);
+            std::cout << "playdohRobot hidden" << std::endl;
+        }
+    }
+    
+}
+
+vector<int> rtsApplication::getClosestPositions_playdoh(cVector3d a_point, double a_radius)
+{
+    vector<int> closestPositionsIds;
+    
+    int numPRobotPositions = m_playdohRobotPositions.size();
+    for (int i = 0; i < numPRobotPositions; ++i)
+    {
+        if (cDistance(m_playdohRobotPositions[i], a_point) < a_radius)
+        {
+            closestPositionsIds.push_back(m_cordonIds[i]);
+        }
+    }
+    
+    return closestPositionsIds;
+}
+
+vector<cVector3d> rtsApplication::idOrder2CordonOrderPositions(vector<cVector3d> a_idOrderPositions)
+{
+    vector<cVector3d> cordonOrderPositions(a_idOrderPositions.size(), cVector3d(0, 0, 0));
+    
+    if (!m_cordonIds.empty())
+    {
+        int numIdOrderPositions = a_idOrderPositions.size();
+        for (int i = 0; i < numIdOrderPositions; i++)
+        {
+            cordonOrderPositions[i] = a_idOrderPositions[m_cordonIds[i]];
+        }
+    }
+    
+    return cordonOrderPositions;
+}
+
+vector<cVector3d> rtsApplication::gwIdOrder2CordonOrderPositions(vector<cVector3d> a_idOrderPositions)
+{
+    vector<cVector3d> cordonOrderPositions(a_idOrderPositions.size(), cVector3d(0, 0, 0));
+    
+    if (!m_gwCordonIds.empty())
+    {
+        int numIdOrderPositions = a_idOrderPositions.size();
+        for (int i = 0; i < numIdOrderPositions; i++)
+        {
+            cordonOrderPositions[i] = a_idOrderPositions[m_gwCordonIds[i]];
+        }
+    }
+    
+    return cordonOrderPositions;
+}
+
+int rtsApplication::getNearestCordonIndex(cVector3d a_pos)
+{
+    int nearestId = 0;
+    int nearestIndex = 0;
+    
+    // command from cordon mode
+    if (m_distributionType == 1 && !m_cordonIds.empty())
+    {
+        // choose which vector to use
+        vector<cVector3d> positions;
+        positions = m_playdohRobotPositions;
+        
+        // trusting the ids and m_robotPositions order
+        nearestId = m_cordonIds[nearestIndex];
+        for (unsigned int k = 0; k < m_cordonIds.size(); ++k)
+        {
+            if ((a_pos - positions[k]).length() < (a_pos - positions[nearestIndex]).length())
+            {
+                // set closest id
+                nearestIndex = k;
+                nearestId = m_cordonIds[nearestIndex];
+            }
+        }
+    }
+    else if (m_distributionType == 0 && !m_ids.empty())
+    {
+        nearestId = m_ids[nearestIndex];
+        for (unsigned int k = 0; k < m_ids.size(); ++k)
+        {
+            if ((a_pos - m_robotPositions[k]).length() < (a_pos - m_robotPositions[nearestIndex]).length())
+            {
+                // set closest id
+                nearestIndex = k;
+                nearestId = m_ids[nearestIndex];
+            }
+        }
+    }
+    
+    return nearestIndex;
+}
+
+
+
+void rtsApplication::startSpeedClock()
+{
+	if (m_testSpeed)
+	{
+		m_speedClock.reset();
+		m_speedClock.start();
+	}
+}
+
+void rtsApplication::stopSpeedClock()
+{
+	if (m_testSpeed)
+	{
+		m_speedClock.stop();
+
+		if (m_checkRegions)
+		{
+			m_regionTimeIntervals.push_back(m_speedClock.getCurrentTimeSeconds());
+		}
+
+		//std::cout << m_speedClock.getCurrentTimeSeconds() << std::endl;
+		//m_testSpeed = false;
+		m_speedClock.reset();
+	}
+}

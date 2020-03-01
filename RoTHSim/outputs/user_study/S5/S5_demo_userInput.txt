@@ -1,0 +1,4 @@
+1031.49 User: 12
+1031.64 User: pos recorded - x: -28.409936 y: 22.466606
+1067.7 User: 33
+1130.67 User: pos recorded - x: -34.222440 y: -4.268518

@@ -1,0 +1,8 @@
+0.0 < Simulation Started >
+1.0 < Move the team to bldg 2 >
+120.0 < How many hotspots have you found at bldg 2? >
+180.0 < Move the team to bldg 4 >
+200.0 < At bldg 2, where would you be most likely to detect hotspots in the future? Report the location with ENTER. >
+300.0 < Of hotspots found at bldg 4, what percent were located to the WEST of the building? >
+360.0 < If you have finished answering questions, press ESC >
+362.0 < Simulation Finished >

@@ -1,0 +1,16 @@
+ServerInput inputs/demo.swarm
+numBuildings 3
+hqFeedFolder hqFeeds/demo/
+CameraHeight 250
+DeviceWorkspaceScale 80
+SampleRate 1.0
+TargetRadius 2
+TargetFoundRadius 12
+TargetColor(rgba) 0.3 0.0 0.5 1.0
+TargetFoundColor(rgba) 1.0 0.0 0.0 1.0
+
+0 10 25 0 0
+0 10 -15 10 0
+0 10 -30 -40 0
+0 10 20 -45 0
+0 10 -30 10 0

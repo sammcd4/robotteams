@@ -1,0 +1,14 @@
+IARadius	25
+WallRadius	15
+NumConns	4
+MaxVel	0.5
+MaxAcc	0.01
+
+Agents	10	<0, -40, 0>	5
+
+Polygon	<30, 30, 0>	<-30, 30, 0>	<-30, 10, 0>	<30, 10, 0> # Top
+
+Polygon	<-10, 10, 0>	<-30, 10, 0>	<-30, -10, 0>	<-10, -10, 0> # Left
+Polygon	<30, 10, 0>	<10, 10, 0>	<10, -10, 0>	<30, -10, 0> # Right
+
+Profile

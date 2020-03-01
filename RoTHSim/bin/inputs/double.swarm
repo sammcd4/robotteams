@@ -1,0 +1,12 @@
+IARadius	21
+MinIARadius	5
+NumConns	3
+MaxVel	0.1
+MaxAcc	0.01
+
+Agents	10	<30, 0, 0>	5
+
+Polygon	<15, 15, 0>	<-15, 20, 0>	<-15, 0, 0>	<15, -15, 0>	<20, 0, 0>
+Polygon	<30, 25, 0>	<30, 30, 0>	<-10, 30, 0>	<-10, 20, 0>
+
+Profile

@@ -1,0 +1,7 @@
+297.0 < Move the team to bldg 1 >
+1165.0 < How many hotspots have you found at bldg 1? >
+1188.0 < Of hotspots found at bldg 1, what percent were located to the NORTH of the building? >
+1225.0 < Overall, where would you be most likely to detect hotspots further? Report the location with ENTER. >
+1254.0 < Move the team to bldg 2 >
+1288 < Search and find two hotspots to the EAST of bldg 2 >
+1338 < Place more coverage to the NORTH of bldg 2 >

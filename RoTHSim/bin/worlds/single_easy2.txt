@@ -1,0 +1,31 @@
+ServerInput inputs/single_easy.swarm
+timeLimitMin 4
+numBuildings 1
+polygonsPerBuilding 1
+bldg1Bounds 20 -20 10 -10
+hqFeedFolder messageFeeds/single_easy2/
+CameraHeight 250
+DeviceWorkspaceScale 80
+DeviceRadius 5
+robotRadius 1.25
+sensorRadius 6.5
+SampleRate 0.1
+
+1 1 21 1 10 45 10 22 0
+1 1 21 1 10 45 1 33 0
+1 2 5 1 30 55 -18 7 0
+1 3 20 1 45 85 23 3 0
+1 3 20 1 45 85 21 16 0
+1 4 20 1 60 115 -9 -25 0
+1 4 20 1 60 115 -2 -31 0
+1 5 0 1 90 130 6 -23 0
+1 6 21 1 105 140 -18 12 0
+1 6 21 1 105 140 -5 24 0
+1 7 21 1 135 170 15 11 0
+1 7 21 1 135 170 22 26 0
+1 8 0 1 145 185 -5 31 0
+1 9 20 1 170 210 -5 -35 0
+1 9 20 1 170 210 2 -36 0
+1 10 23 1 205 235 -20 2 0
+1 10 23 1 205 235 -14 13 0
+1 11 3 1 210 240 5 32 0

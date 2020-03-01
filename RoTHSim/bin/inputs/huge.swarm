@@ -1,0 +1,8 @@
+IARadius	21
+NumConns	3
+MaxVel	0.2
+MaxAcc	0.01
+
+Agents	1000	<0, 0, 0>	5
+
+Profile

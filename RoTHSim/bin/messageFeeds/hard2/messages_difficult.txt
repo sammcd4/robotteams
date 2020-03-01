@@ -1,0 +1,23 @@
+0.0 < Simulation Started >
+1.0 < Move the team to bldg 4 >
+60 < Search the region ~20m WEST of the building >
+65 < How many hotspots have you found at this building? >
+75 < Search the region ~30m SOUTH of the building >
+90 < Move the team to bldg 1 >
+100 < At bldg 4, what percent of hotspots found were located to the NORTH of the building? >
+132 < Place more coverage on the NORTH side of the building >
+140 < Search the region ~30m SOUTH of the building >
+160 < Search near the SOUTHWEST corner of the building >
+165.0 < At bldg 1, where would you be most likely to detect hotspots further? Report the location with ENTER. >
+170 < Move the team to bldg 3 >
+200 < Place more coverage on the EAST side of the building >
+235 < Search the region ~20m NORTH of the building >
+250 < How many hotspots have you found on the EAST side of bldg 3? >
+260 < Move the team to bldg 4 >
+265 < At bldg 3, what percent of hotspots found were located to the NORTH of the building? >
+285 < Search the NORTH side of the building >
+310 < Place more coverage on the WEST side of the building >
+320.0 < Overall, where would you be most likely to detect hotspots further? Report the location with ENTER. >
+325 < Search the region ~20m NORTH WEST of the building >
+360.0 < When you have finished answering questions, press ESC >
+362.0 < Simulation Finished >

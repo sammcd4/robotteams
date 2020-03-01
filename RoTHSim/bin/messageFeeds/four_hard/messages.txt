@@ -1,0 +1,5 @@
+0.0 < Simulation Started >
+1.0 < Command the team to the other building >
+2.0 < Possible enemy sighting to the NE >
+3.0 < Shift formation to acquire intelligence >
+4.0 < Place more coverage on the West side of the building >

@@ -1,0 +1,61 @@
+﻿Build started 11/11/2015 3:32:50 PM.
+     1>Project "C:\Users\Sam McDonald\Downloads\chai3d-3.0.0-VisualStudio\chai3d-3.0.0\extras\freeglut\freeglut-VS2013.vcxproj" on node 2 (Build target(s)).
+     1>ClCompile:
+         C:\Program Files (x86)\Microsoft Visual Studio 12.0\VC\bin\CL.exe /c /I./include /Zi /nologo /W3 /WX- /Od /Oy- /D _CRT_SECURE_NO_WARNINGS /D _DEBUG /D FREEGLUT_STATIC /D WIN32 /D _LIB /D _VC80_UPGRADE=0x0600 /D _MBCS /Gm- /EHsc /RTC1 /MDd /GS /fp:precise /Zc:wchar_t /Zc:forScope /Fo"obj/Debug/Win32\\" /Fd"obj/Debug/Win32\vc120.pdb" /FR"obj/Debug/Win32\\" /Gd /TC /wd4101 /analyze- /errorReport:prompt /MP src\freeglut_callbacks.c src\freeglut_cursor.c src\freeglut_display.c src\freeglut_ext.c src\freeglut_font.c src\freeglut_font_data.c src\freeglut_gamemode.c src\freeglut_geometry.c src\freeglut_glutfont_definitions.c src\freeglut_init.c src\freeglut_input_devices.c src\freeglut_joystick.c src\freeglut_main.c src\freeglut_menu.c src\freeglut_misc.c src\freeglut_overlay.c src\freeglut_spaceball.c src\freeglut_state.c src\freeglut_stroke_mono_roman.c src\freeglut_stroke_roman.c src\freeglut_structure.c src\freeglut_teapot.c src\freeglut_videoresize.c src\freeglut_window.c
+         freeglut_callbacks.c
+         freeglut_cursor.c
+         freeglut_display.c
+         freeglut_ext.c
+         freeglut_font.c
+         freeglut_font_data.c
+         freeglut_gamemode.c
+         freeglut_geometry.c
+         freeglut_glutfont_definitions.c
+         freeglut_init.c
+         freeglut_input_devices.c
+         freeglut_joystick.c
+         freeglut_main.c
+         freeglut_menu.c
+         freeglut_misc.c
+         freeglut_overlay.c
+         freeglut_spaceball.c
+         freeglut_state.c
+         freeglut_stroke_mono_roman.c
+         freeglut_stroke_roman.c
+         freeglut_structure.c
+         freeglut_teapot.c
+         freeglut_videoresize.c
+         freeglut_window.c
+       Lib:
+         C:\Program Files (x86)\Microsoft Visual Studio 12.0\VC\bin\Lib.exe /OUT:"lib/Debug/Win32\freeglut.lib" /NOLOGO obj/Debug/Win32\freeglut_callbacks.obj
+         obj/Debug/Win32\freeglut_cursor.obj
+         obj/Debug/Win32\freeglut_display.obj
+         obj/Debug/Win32\freeglut_ext.obj
+         obj/Debug/Win32\freeglut_font.obj
+         obj/Debug/Win32\freeglut_font_data.obj
+         obj/Debug/Win32\freeglut_gamemode.obj
+         obj/Debug/Win32\freeglut_geometry.obj
+         obj/Debug/Win32\freeglut_glutfont_definitions.obj
+         obj/Debug/Win32\freeglut_init.obj
+         obj/Debug/Win32\freeglut_input_devices.obj
+         obj/Debug/Win32\freeglut_joystick.obj
+         obj/Debug/Win32\freeglut_main.obj
+         obj/Debug/Win32\freeglut_menu.obj
+         obj/Debug/Win32\freeglut_misc.obj
+         obj/Debug/Win32\freeglut_overlay.obj
+         obj/Debug/Win32\freeglut_spaceball.obj
+         obj/Debug/Win32\freeglut_state.obj
+         obj/Debug/Win32\freeglut_stroke_mono_roman.obj
+         obj/Debug/Win32\freeglut_stroke_roman.obj
+         obj/Debug/Win32\freeglut_structure.obj
+         obj/Debug/Win32\freeglut_teapot.obj
+         obj/Debug/Win32\freeglut_videoresize.obj
+         obj/Debug/Win32\freeglut_window.obj
+         freeglut-VS2013.vcxproj -> C:\Users\Sam McDonald\Downloads\chai3d-3.0.0-VisualStudio\chai3d-3.0.0\extras\freeglut\lib/Debug/Win32\freeglut.lib
+       BscMake:
+         C:\Program Files (x86)\Microsoft Visual Studio 12.0\VC\bin\bscmake.exe /nologo /o"lib/Debug/Win32\freeglut.bsc" obj/Debug/Win32\freeglut_callbacks.sbr obj/Debug/Win32\freeglut_cursor.sbr obj/Debug/Win32\freeglut_display.sbr obj/Debug/Win32\freeglut_ext.sbr obj/Debug/Win32\freeglut_font.sbr obj/Debug/Win32\freeglut_font_data.sbr obj/Debug/Win32\freeglut_gamemode.sbr obj/Debug/Win32\freeglut_geometry.sbr obj/Debug/Win32\freeglut_glutfont_definitions.sbr obj/Debug/Win32\freeglut_init.sbr obj/Debug/Win32\freeglut_input_devices.sbr obj/Debug/Win32\freeglut_joystick.sbr obj/Debug/Win32\freeglut_main.sbr obj/Debug/Win32\freeglut_menu.sbr obj/Debug/Win32\freeglut_misc.sbr obj/Debug/Win32\freeglut_overlay.sbr obj/Debug/Win32\freeglut_spaceball.sbr obj/Debug/Win32\freeglut_state.sbr obj/Debug/Win32\freeglut_stroke_mono_roman.sbr obj/Debug/Win32\freeglut_stroke_roman.sbr obj/Debug/Win32\freeglut_structure.sbr obj/Debug/Win32\freeglut_teapot.sbr obj/Debug/Win32\freeglut_videoresize.sbr obj/Debug/Win32\freeglut_window.sbr
+     1>Done Building Project "C:\Users\Sam McDonald\Downloads\chai3d-3.0.0-VisualStudio\chai3d-3.0.0\extras\freeglut\freeglut-VS2013.vcxproj" (Build target(s)).
+
+Build succeeded.
+
+Time Elapsed 00:00:11.83

@@ -1,0 +1,7 @@
+80.9965 User: 0
+116.898 User: 20
+170.72 User: pos recorded - x: -22.775334 y: 23.289434
+255.845 User: 0
+275.171 User: 20
+388.353 User: pos recorded - x: 1.816836 y: -16.562851
+391.851 ESC

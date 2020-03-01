@@ -1,0 +1,8 @@
+IARadius	10
+NumConns	3
+MaxVel	0.07
+MaxAcc	0.04
+
+Agents	10	<50, 0, 0>	5
+
+Polygon	<-10, -20, 0>	<10, -20, 0>	<10, 20, 0>	<-10, 20, 0>

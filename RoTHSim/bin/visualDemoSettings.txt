@@ -1,0 +1,20 @@
+worldFile				single_hard1
+userName				user
+hapticsEnabled			1
+visualEnabled			0
+showSurroundOutline		0
+showTravelOutline		0
+useVisualDemo			1
+NASATLX					1
+teamDisplayNum			3
+teamFullscreen			1
+sensorMessageDisplayNum	1
+sensorMessageFullscreen	0
+screen1Resolution		1920	1080
+screen2Resolution		1680	1050
+screen3Resolution		1680	1050
+showHiddenHotspots		0
+invertSensorMessage		0
+useDetections 			1
+useDataCollection 		1
+zUpOriented				0

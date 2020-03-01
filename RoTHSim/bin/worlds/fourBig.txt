@@ -1,0 +1,27 @@
+ServerInput inputs/fourBig.swarm
+numBuildings 4
+hqFeedFolder hqFeeds/fourBig/
+CameraHeight 300
+DeviceWorkspaceScale 1250
+SampleRate 1.0
+TargetRadius 20
+TargetFoundRadius 13
+TargetColor(rgba) 0.5 0.0 0.0 1.0
+TargetFoundColor(rgba) 0.0 0.5 0.0 1.0
+
+0 100 450 450 0
+0 100 900 900 0
+0 100 700 400 0
+0 100 400 1000 0
+
+0 100 -400 200 0
+0 100 -1000 450 0
+0 100 -500 1000 0
+
+0 100 -1000 -950 0
+0 100 -1000 -400 0
+0 100 -500 -300 0
+
+0 100 700 -300 0
+0 100 1000 -400 0
+0 100 700 -600 0

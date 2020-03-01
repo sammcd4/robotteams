@@ -1,0 +1,945 @@
+
+//---------------------------------------------------------------------------
+#include "CGELPlaydoh.h"
+//---------------------------------------------------------------------------
+typedef GLUquadric GLUquadricObj;
+//---------------------------------------------------------------------------
+
+//===========================================================================
+/*!
+    Constructor of cGELPlaydoh.
+
+    \fn     cGELPlaydoh::cGELPlaydoh()
+    \param  a_
+*/
+//===========================================================================
+cGELPlaydoh::cGELPlaydoh(cWorld* a_world, vector<cVector3d> a_robotPositions, bool a_useStripMode)
+{
+	// set parent GELPlaydoh world
+	m_world = a_world;
+
+	// create deformable world
+	m_defWorld = new cGELPlaydohWorld();
+	m_world->addChild(m_defWorld);
+	
+	// Play with these numbers carefully!
+	cGELPlaydohSkeletonNode::default_kDampingPos = 0.5;
+	cGELPlaydohSkeletonNode::default_kDampingRot = 0.5;
+	m_defWorld->m_integrationTime = 0.001 / 20;
+
+	// setup default values for nodes
+	cGELPlaydohSkeletonNode::default_radius = 0.25;
+	cGELPlaydohSkeletonNode::default_kDampingPos = 10.0;
+	cGELPlaydohSkeletonNode::default_kDampingRot = 0.1;
+	cGELPlaydohSkeletonNode::default_muStaticFrictionPos = 5.0;
+	cGELPlaydohSkeletonNode::default_muStaticFrictionRot = 0.5;
+	cGELPlaydohSkeletonNode::default_muDynamicFrictionPos = 0.2;
+	cGELPlaydohSkeletonNode::default_muDynamicFrictionRot = 0.2;
+	cGELPlaydohSkeletonNode::default_mass = 0.02;  // [kg]
+	cGELPlaydohSkeletonNode::default_showFrame = true;
+	cGELPlaydohSkeletonNode::default_color.set(1.0, 0.6, 0.6);
+	cGELPlaydohSkeletonNode::default_useGravity = true;
+	cGELPlaydohSkeletonNode::default_gravity.set(0.00, 0.00, -1.00);
+
+	// setup default values for links
+	cGELPlaydohSkeletonLink::default_kSpringElongation = 10.0; // [N/m]
+	cGELPlaydohSkeletonLink::default_kSpringFlexion = 0.2;   // [Nm/RAD]
+	cGELPlaydohSkeletonLink::default_kSpringTorsion = 0.1;   // [Nm/RAD]
+	cGELPlaydohSkeletonLink::default_color.set(0.2, 0.2, 1.0);
+
+	// create a deformable playdoh mesh
+	m_mesh = new cGELPlaydohMesh(m_world);
+	m_defWorld->m_gelMeshes.push_back(m_mesh);
+	m_mesh->m_useSkeletonModel = true;
+
+	// set default sphere spacing
+	m_defaultRadiusToSpacingRatio = 4;
+
+	// set default sphere radius
+	m_defaultSphereRadius = 0.25;
+
+	// set sphere spacing
+	m_sphereSpacing = m_defaultSphereRadius / m_defaultRadiusToSpacingRatio;
+
+	// zero perimeter
+	m_perimeter = 0;
+
+	// zero large perimeter
+	m_largePerimeter = 0;
+
+	// set static friction radius
+	m_staticFrictionR = 1.0;
+
+	// zero geometry perimeter
+	m_geomPerimeter = 0;
+
+	// set default playdoh stiffness
+	m_default_kSpringElongation = cGELPlaydohSkeletonLink::default_kSpringElongation;
+
+	// set playdoh stiffness
+	m_kSpringElongation = m_default_kSpringElongation;
+
+	// set low playdo stiffness
+	m_lowStiffness = 1.0;
+
+	// set high playdoh stiffness
+	m_highStiffness = 100.0;
+
+	// set robot positions
+	m_robotPositions = a_robotPositions;
+
+	// set strip mode
+	m_useStripMode = a_useStripMode;
+
+	if (m_useStripMode)
+	{
+		// create GELPlaydoh strips connecting robot positions
+		createCurvedStrips(m_robotPositions);
+
+		// create links for each strip
+		createStripLinks();
+	}
+	else
+	{
+		// create nodes connecting robots
+		createCurvedNodes(m_robotPositions);
+		//m_spheres.front()->m_fixed = true;
+
+		// create links between each node
+		createNodeLinks();
+	}
+
+	m_mesh->m_showSkeletonModel = true;
+
+	m_defWorld->m_integrationTime = 0.005;
+
+};
+
+int cGELPlaydoh::getNumSpheres()
+{
+	int numSpheres = 0;
+	if (m_useStripMode)
+	{
+		cGELPlaydohStrip* temp;
+		list<cGELPlaydohStrip*>::iterator iter;
+		for (iter = m_strips.begin(); iter != m_strips.end(); iter++)
+		{
+			// dereference iterator
+			temp = *iter;
+
+			// get number of spheres in strip
+			numSpheres += temp->getNumSpheres();
+		}
+	}
+	else numSpheres += m_spheres.size();
+	return numSpheres;
+}
+
+void cGELPlaydoh::setStiffness(double a_stiffness)
+{
+	if (m_useStripMode)
+	{
+		cGELPlaydohStrip* temp;
+		list<cGELPlaydohStrip*>::iterator iter;
+		for (iter = m_strips.begin(); iter != m_strips.end(); iter++)
+		{
+			// dereference iterator
+			temp = *iter;
+
+			// set stiffness for the strip
+			temp->setStiffness(a_stiffness);
+		}
+	}
+	else
+	{
+		cGELPlaydohSkeletonNode* temp;
+		list<cGELPlaydohSkeletonNode*>::iterator iter;
+		for (iter = m_spheres.begin(); iter != m_spheres.end(); iter++)
+		{
+			// dereference iterator
+			temp = *iter;
+
+			// set stiffness for the sphere
+			temp->setStiffness(a_stiffness);
+		}
+
+	}
+}
+
+void cGELPlaydoh::updateRobotPositions(vector<cVector3d> a_robotPositions)
+{
+	// update the vector storing robot positions
+	m_robotPositions = a_robotPositions;
+
+	// update the physical position of robot-containing nodes
+	cGELPlaydohSkeletonNode* temp;
+	cVector3d pos;
+	list<cGELPlaydohSkeletonNode*>::iterator iter;
+	vector<cVector3d>::iterator iterPos;
+	iterPos = m_robotPositions.begin();
+	for (iter = m_robotSpheres.begin(); iter != m_robotSpheres.end(); iter++)
+	{
+		// dereference iterators
+		temp = *iter;
+		pos = *iterPos;
+
+		// set position of node
+		temp->m_nextPos = pos;
+		temp->applyNextPose();
+		//temp->m_pos = pos;
+
+		// increment vector iterator
+		iterPos++;
+	}
+
+}
+
+void cGELPlaydoh::updateRobotPositions(vector<cVector3d> a_robotPositions, double a_timeInterval)
+{
+	// update the vector storing robot positions
+	m_robotPositions = a_robotPositions;
+
+	// update the physical position of robot-containing nodes
+	cGELPlaydohSkeletonNode* temp;
+	cVector3d pos;
+	list<cGELPlaydohSkeletonNode*>::iterator iter;
+	vector<cVector3d>::iterator iterPos;
+	iterPos = m_robotPositions.begin();
+	for (iter = m_robotSpheres.begin(); iter != m_robotSpheres.end(); iter++)
+	{
+		// dereference iterators
+		temp = *iter;
+		pos = *iterPos;
+
+		// calculate external force on node
+		cVector3d diffPos = pos - temp->m_pos;
+		cVector3d v2 = cDiv(a_timeInterval, diffPos);
+		cVector3d v1 = temp->m_vel;
+		cVector3d diffVel = v2 - v1;
+		cVector3d acc = cDiv(a_timeInterval, diffVel);
+		cVector3d force = cMul((temp->m_mass / a_timeInterval), acc);
+
+		// set external force on node
+		temp->setExternalForce(force);
+
+		// increment vector iterator
+		iterPos++;
+	}
+
+}
+
+ void cGELPlaydoh::createCurvedStrips(vector<cVector3d> a_robotPositions)
+ {
+	 int size =  a_robotPositions.size();
+	 for(unsigned int i=0; i < size; i++)
+	 {
+
+		// define desired vector locations
+		unsigned int current = i;
+		unsigned int next = (i+1)%size;
+		unsigned int previous = (i+size-2)%size;
+		unsigned int future = (i+2)%size;
+
+		// set previous position
+		cVector3d p0 = a_robotPositions[previous];
+
+		// set starting and ending positions
+		cVector3d p1 = a_robotPositions[current];
+		cVector3d p2 = a_robotPositions[next];
+
+		// set future position
+		cVector3d p3 = a_robotPositions[future];
+
+		// create the strip of potential spheres
+		cGELPlaydohStrip* strip = new cGELPlaydohStrip(m_world, m_mesh, true, true, true, p0, p1, p2, p3);
+		m_strips.push_back(strip);
+	}
+
+ }
+
+ void cGELPlaydoh::addSphere(cGELPlaydohSkeletonNode* a_sphere1, cGELPlaydohSkeletonNode* a_sphere2,
+	 list<cGELPlaydohSkeletonNode*>::iterator node, list<cGELPlaydohSkeletonNode*>::iterator meshNode,
+	 list<cGELPlaydohSkeletonLink*>::iterator meshLink)
+{
+	// define new radius as an average of surrounding radii
+	double radius1 = a_sphere1->m_radius;
+	double radius2 = a_sphere2->m_radius;
+	double newRadius = (radius1 + radius2) / 2;
+
+	// create new sphere to be added
+	cGELPlaydohSkeletonNode* newSphere = new cGELPlaydohSkeletonNode();
+	newSphere->m_radius = newRadius;
+
+	// define position of new sphere
+	cVector3d pos1 = a_sphere1->m_pos;
+	cVector3d pos2 = a_sphere2->m_pos;
+	cVector3d diff12 = pos2 - pos1;
+	newSphere->m_pos = (pos1 + 0.5*diff12);
+
+	// set color
+	newSphere->m_color.set(0.0, 1.0, 0.5, 1.0f);
+
+	// set frame size for node
+	newSphere->setFrameScale(1.0);
+
+	// add this sphere to the list of playdoh spheres
+	m_spheres.insert(node, newSphere);
+
+	// add this sphere to the list of GEL mesh nodes
+	m_mesh->m_nodes.insert(meshNode, newSphere);
+
+	// modify previous link in the list to connect sphere1 to newSphere
+	// (instead of sphere1 to sphere2)
+	list<cGELPlaydohSkeletonLink*>::iterator prevLink;
+
+	// if the link iterator is located at the beginning of the list
+	if (meshLink == m_mesh->m_links.begin())
+	{
+		cGELPlaydohSkeletonLink* link1 = m_mesh->m_links.back();
+		link1->m_node1 = newSphere;
+	}
+	else
+	{
+		prevLink = meshLink--;
+		cGELPlaydohSkeletonLink* link1 = *meshLink;
+		//link1->m_node0 = sphere1; // should already be set to sphere1
+		link1->m_node1 = newSphere;
+		meshLink++;
+	}
+
+	// add link from new sphere to current sphere
+	cGELPlaydohSkeletonLink* newLink = new cGELPlaydohSkeletonLink(newSphere, a_sphere2);
+	m_mesh->m_links.insert(meshLink, newLink);
+}
+
+ void cGELPlaydoh::removeSphere(list<cGELPlaydohSkeletonNode*>::iterator node, list<cGELPlaydohSkeletonNode*>::iterator meshNode,
+	 list<cGELPlaydohSkeletonLink*>::iterator meshLink)
+ {
+	 // erase this sphere from the list of playdoh spheres
+	 m_spheres.erase(node);
+
+	 // erase this sphere from the list of GEL mesh nodes
+	 m_mesh->m_nodes.erase(meshNode);
+
+
+	 list<cGELPlaydohSkeletonLink*>::iterator prevMeshLink;
+	 list<cGELPlaydohSkeletonLink*>::iterator nextMeshLink;
+
+	 cGELPlaydohSkeletonLink* prev;
+	 cGELPlaydohSkeletonLink* next;
+
+	 nextMeshLink = meshLink;
+
+	 if (meshLink == m_mesh->m_links.begin())
+	 {
+		 nextMeshLink = ++meshLink;
+		 meshLink--;
+
+		 prev = m_mesh->m_links.back();
+		 next = *nextMeshLink;
+	 }
+	 //else if (nextMeshLink == m_mesh->m_links.end())
+	 else if ((nextMeshLink != m_mesh->m_links.end()) && 
+		 ((++nextMeshLink) == m_mesh->m_links.end()))
+	 {
+		 prevMeshLink = --meshLink;
+		 meshLink++;
+		 nextMeshLink = m_mesh->m_links.begin();
+
+		 prev = *prevMeshLink;
+		 next = m_mesh->m_links.front();
+	 }
+	 else
+	 {
+		 // create iterator pointing to the previous linked element to be erased
+		 prevMeshLink = --meshLink;
+		 meshLink++;
+
+		 // create iterator pointing to the next linked element
+		 nextMeshLink = ++meshLink;
+		 meshLink--;
+
+		 prev = *prevMeshLink;
+		 next = *nextMeshLink;
+	 }
+
+	 // modify the previous link so the node1 is the next link node0
+	 prev->m_node1 = next->m_node0;
+
+	 // erase the current link
+	 m_mesh->m_links.erase(meshLink);
+ }
+
+ void cGELPlaydoh::removeSphere(cGELPlaydohSkeletonNode* a_sphere)
+ {
+	 
+
+ }
+
+
+// list<cGELPlaydohSkeletonNode*>::iterator cGELPlaydoh::removeSphere(list<cGELPlaydohSkeletonNode*>::iterator iter)
+//{
+//	//// remove sphere from the world
+//	//m_world->deleteChild(*iter);
+//
+//	//return m_spheres.erase(iter);
+//}
+
+void cGELPlaydoh::deformGELPlaydoh(cGELPlaydohSkeletonNode* a_sphere, double a_numSurroundingSpheres, cVector3d a_translation)
+{
+
+}
+
+cVector3d cGELPlaydoh::computeForce(const cVector3d& a_cursor, double a_cursorRadius)
+{
+	// init temp variable
+	cVector3d force;
+	force.zero();
+
+	if (m_useStripMode)
+	{
+		cGELPlaydohStrip* current;
+		list<cGELPlaydohStrip*>::iterator iter;
+
+		for (iter = m_strips.begin(); iter != m_strips.end(); iter++)
+		{
+			// set current strip
+			current = *iter;
+
+			cVector3d f = current->computeForce(a_cursor, a_cursorRadius);
+
+			force.add(f);
+		}
+	}
+	else
+	{
+		// object pointers
+		cGELPlaydohSkeletonNode* current;
+		cGELPlaydohSkeletonNode* next;
+		cGELPlaydohSkeletonNode* prev;
+		cGELPlaydohSkeletonLink* currentLink;
+		cGELPlaydohSkeletonLink* nextLink;
+		cGELPlaydohSkeletonLink* prevLink;
+
+		// iterators
+		list<cGELPlaydohSkeletonNode*>::iterator iter;
+		list<cGELPlaydohSkeletonNode*>::iterator iterNext;
+		list<cGELPlaydohSkeletonNode*>::iterator iterPrev;
+		list<cGELPlaydohSkeletonLink*>::iterator iterLink;
+		list<cGELPlaydohSkeletonLink*>::iterator iterLinkNext;
+		list<cGELPlaydohSkeletonLink*>::iterator iterLinkPrev;
+		list<cGELPlaydohSkeletonNode*>::iterator meshNode;
+		list<cGELPlaydohSkeletonNode*>::iterator prevMeshNode;
+
+		// starting iterator values
+		iterLink = m_mesh->m_links.begin();
+
+		iterPrev = m_spheres.end();
+		--iterPrev;
+		prev = *iterPrev;
+
+		meshNode = m_mesh->m_nodes.begin();
+		prevMeshNode = m_mesh->m_nodes.end();
+		--prevMeshNode;
+
+		iterLink = m_mesh->m_links.begin();
+		iterLinkPrev = m_mesh->m_links.end();
+		--iterLinkPrev;
+
+		// temporary perimeter
+		double tempPerimeter = 0;
+
+		bool externalForceApplied = false;
+		for (iter = m_spheres.begin(); iter != m_spheres.end(); iter++)
+		{
+			// set current sphere
+			current = *iter;
+
+			// set next sphere
+			iterNext = iter;
+			if ((iterNext != m_spheres.end()) && ((++iterNext) == m_spheres.end()))
+			{
+				next = *(m_spheres.begin());
+			}
+			else
+			{
+				next = *iterNext;
+			}
+
+			// set prev sphere
+			if (iter == m_spheres.begin())
+			{
+				prev = m_spheres.back();
+			}
+			//else
+			//{
+			//	prev = prev;
+			//}
+
+			// set current link
+			currentLink = *iterLink;
+
+			// set next link
+			iterLinkNext = iterLink;
+			if ((iterLinkNext != m_mesh->m_links.end()) && ((++iterLinkNext) == m_mesh->m_links.end()))
+			{
+				nextLink = *(m_mesh->m_links.begin());
+			}
+			else
+			{
+				nextLink = *iterLinkNext;
+			}
+
+			// set link spring stiffness
+			currentLink->m_kSpringElongation = m_kSpringElongation;
+
+			// calculate addition to perimeter
+			cVector3d currentPos = current->m_pos;
+			cVector3d nextPos = next->m_pos;
+			cVector3d diff = nextPos - currentPos;
+			tempPerimeter  = tempPerimeter + diff.length();
+
+			// check proximity of two spheres
+			double spacing = diff.length();
+
+			// Need to add more logic to decide when to add spheres besides just proximity.
+			if (spacing >= 2*m_sphereSpacing)
+			{
+				//addSphere(prev, current, iter, meshNode, iterLink);
+			}
+
+			// compute force on node
+			cVector3d nodePos = current->m_pos;
+			double nodeRadius = current->m_radius;
+			double nodeStiffness = current->m_stiffness;
+			cVector3d f = computeCylNodeForce(a_cursor, a_cursorRadius, nodePos, nodeRadius, nodeStiffness);
+			cVector3d tmpfrc = cNegate(f);
+			if (tmpfrc.length() > 0)
+			{
+				if (!externalForceApplied)
+				{
+					externalForceApplied = true;
+				}
+
+				// set contact state of node
+				current->m_contacted = true;
+			}
+			else current->m_contacted = false;
+
+			// check proximity to cursor
+			current->m_useStaticFriction = true;
+			if (externalForceApplied)
+			{
+				cVector3d diff = currentPos - a_cursor;
+				if (diff.length() < m_staticFrictionR && !current->m_contacted)
+					current->m_useStaticFriction = false;
+			}
+
+			current->setExternalForce(tmpfrc);
+			force.add(f);
+
+			// check ground
+			if (nodePos.z < 0.0)
+				current->m_pos.z = 0.0;
+
+			// always set node to align with xy plane
+			current->m_pos.z = 0.0;
+
+			// increment the link iterator
+			iterLink++;
+
+			// store previous iterators for next iterate
+			iterPrev = iter;
+			prevMeshNode = meshNode;
+			iterLinkPrev = iterLink;
+
+			//// store previous sphere for next iterate
+			prev = current;
+
+			//// increment the mesh node
+			meshNode++;
+		}
+
+
+		// set perimeter
+		m_perimeter = tempPerimeter;
+	
+		// set link stiffness for all links (global)
+		//m_kSpringElongation = (m_geomPerimeter / m_perimeter) * m_default_kSpringElongation;
+		if (m_perimeter > m_largePerimeter)
+		{
+			m_kSpringElongation = m_lowStiffness;
+		}
+		else
+		{
+			m_kSpringElongation = m_lowStiffness -
+				(m_default_kSpringElongation - m_lowStiffness) / (m_largePerimeter - m_geomPerimeter) *
+				(m_perimeter - m_largePerimeter);
+		}
+
+		if (externalForceApplied)
+		{
+			//std::cout << "external force applied" << std::endl;
+			cGELPlaydohSkeletonNode* temp;
+			list<cGELPlaydohSkeletonNode*>::iterator iter;
+			for (iter = m_robotSpheres.begin(); iter != m_robotSpheres.end(); iter++)
+			{
+				// dereference iterators
+				temp = *iter;
+
+				// unfix the robot nodes so they can be moved
+				temp->m_fixed = false;
+			}
+		}
+
+	}
+
+	return force;
+}
+
+void cGELPlaydoh::updateDynamics(double a_timeInterval)
+{
+	// update the deformable world
+	m_defWorld->updateDynamics(a_timeInterval);
+
+	// set robot positions based on dynamics
+	cGELPlaydohSkeletonNode* temp;
+	cVector3d pos;
+	list<cGELPlaydohSkeletonNode*>::iterator iter;
+	vector<cVector3d>::iterator iterPos;
+	iterPos = m_robotPositions.begin();
+	int i = 0;
+	for (iter = m_robotSpheres.begin(); iter != m_robotSpheres.end(); iter++)
+	{
+		// dereference iterators
+		temp = *iter;
+		pos = *iterPos;
+
+		// store new robot position
+		m_robotPositions[i] = temp->m_pos;
+
+		iterPos++;
+		i++;
+	}
+}
+
+void cGELPlaydoh::updateSphereSpacing()
+{
+	if (!m_spheres.empty())
+	{
+		list<cGELPlaydohSkeletonNode*>::iterator node;
+		list<cGELPlaydohSkeletonNode*>::iterator prevNode;
+		list<cGELPlaydohSkeletonNode*>::iterator meshNode;
+		list<cGELPlaydohSkeletonNode*>::iterator prevMeshNode;
+		list<cGELPlaydohSkeletonLink*>::iterator meshLink;
+		list<cGELPlaydohSkeletonLink*>::iterator prevMeshLink;
+		cGELPlaydohSkeletonNode* prevSphere;
+		double d = 2 * m_sphereSpacing;
+
+		int i = 0;
+
+		// iterate through list of spheres and check proximity of spheres
+		// add or remove spheres and links accordingly
+		prevNode = m_spheres.end();
+		--prevNode;
+		prevSphere = *prevNode;
+
+		meshNode = m_mesh->m_nodes.begin();
+		prevMeshNode = m_mesh->m_nodes.end();
+		--prevMeshNode;
+
+		meshLink = m_mesh->m_links.begin();
+		prevMeshLink = m_mesh->m_links.end();
+		--prevMeshLink;
+		for (node = m_spheres.begin(); node != m_spheres.end(); node++)
+		{
+			// define surrounding spheres
+			cGELPlaydohSkeletonNode* sphere2 = *node;
+			cGELPlaydohSkeletonNode* sphere1;
+			//std::cout << " inside updating sphere spacing" << std::endl;
+
+			// if the node iterator is located at the beginning of the sphere list
+			if (node == m_spheres.begin())
+			{
+				sphere1 = m_spheres.back();
+			}
+			else
+			{
+				sphere1 = prevSphere;
+			}
+
+			// check proximity of two spheres
+			cVector3d pos1 = sphere1->m_pos;
+			cVector3d pos2 = sphere2->m_pos;
+			cVector3d diff = pos2 - pos1;
+			double spacing = diff.length();
+
+			// Need to add more logic to decide when to add spheres besides just proximity.
+			if (spacing >= d)
+			{
+				//addSphere(sphere1, sphere2, node, meshNode, meshLink);
+			}
+
+			// Need to add logic to decide when to remove spheres
+			// Ideas: when motion is toward the center of the playdoh.
+			//		  when...
+			if (!prevSphere->m_atRobot && i ==0)
+			{
+				removeSphere(prevNode, prevMeshNode, prevMeshLink);
+			}
+			i++;
+			// store previous iterators for next iterate
+			prevNode = node;
+			prevMeshNode = meshNode;
+			prevMeshLink = meshLink;
+
+			// store previous sphere for next iterate
+			prevSphere = sphere2;
+
+			// increment the mesh node
+			meshNode++;
+
+			// increment the mesh link
+			meshLink++;
+		}
+		//std::cout << " finished updating sphere spacing" << std::endl;
+	}
+	else std::cout << "spheres list is empty" << std::endl;
+}
+
+void cGELPlaydoh::createStripLinks()
+{
+	cGELPlaydohStrip* current;
+	list<cGELPlaydohStrip*>::iterator iter;
+
+	for (iter = m_strips.begin(); iter != m_strips.end(); iter++)
+	{
+		// set current strip
+		current = *iter;
+
+		// create the links for this strip
+		current->createLinks();
+
+	}
+}
+
+void cGELPlaydoh::createCurvedNodes(vector<cVector3d> a_robotPositions)
+{
+	int size = a_robotPositions.size();
+	for (unsigned int i = 0; i < size; i++)
+	{
+
+		// define desired vector locations
+		unsigned int current = i;
+		unsigned int next = (i + 1) % size;
+		unsigned int previous = (i + size - 2) % size;
+		unsigned int future = (i + 2) % size;
+
+		// set previous position
+		cVector3d p0 = a_robotPositions[previous];
+
+		// set starting and ending positions
+		cVector3d p1 = a_robotPositions[current];
+		cVector3d p2 = a_robotPositions[next];
+
+		// set future position
+		cVector3d p3 = a_robotPositions[future];
+
+		// vector from robot1 to robot2
+		cVector3d diff12 = p2 - p1;
+		cVector3d norm12 = cNormalize(diff12);
+		double distance = diff12.length();
+
+		// normal vectors for curving
+		cVector3d norm01 = p1 - p0;
+		norm01.normalize();
+		cVector3d norm32 = p2 - p3;
+		norm32.normalize();
+
+		// define number of spheres
+		int numSpheres = diff12.length() / m_sphereSpacing;
+
+		// add spheres between p1 and p2
+		for (int i = 0; i < numSpheres; i++)
+		{
+			// create sphere and add it to the GELPlaydoh's world
+			cGELPlaydohSkeletonNode* sphere = new cGELPlaydohSkeletonNode();
+			//m_world->addChild(sphere);
+
+			// set position of sphere along curved path between robot points
+			cVector3d curveVec = norm12 + (double)(numSpheres - i) / (double)(numSpheres)*(norm01 + norm32);
+			curveVec.normalize();
+			//cVector3d curveVec2 = -1*norm12 + (double)(numSpheres - i) / (double)(numSpheres)*norm32;
+			//curveVec2.normalize();
+
+			cVector3d result = p1 + (double)i / (double)(numSpheres)*distance*curveVec;
+			//cVector3d result2 = a_p2 + (double)i / (double)(numSpheres)*distance*curveVec2;
+			sphere->m_pos = result;
+
+			// set color
+			sphere->m_color.set(0.0, 0.0, 0.5, 1.0f);
+
+			// set the first sphere to be at robot location
+			if (i == 0)
+			{
+				sphere->m_atRobot = true;
+				sphere->m_fixed = true;
+				sphere->m_color.set(0.5, 0.0, 0.0, 1.0f);
+				m_robotSpheres.push_back(sphere);
+			}
+
+
+			// set frame size for node
+			sphere->setFrameScale(1.0);
+
+			// add this sphere to the list of playdoh spheres
+			m_spheres.push_back(sphere);
+
+			// add this sphere to the list of GEL mesh nodes
+			m_mesh->m_nodes.push_back(sphere);
+		}
+
+	}
+
+	// initialize playdoh perimeter
+	cGELPlaydohSkeletonNode* current;
+	cGELPlaydohSkeletonNode* next;
+	list<cGELPlaydohSkeletonNode*>::iterator iter;
+	list<cGELPlaydohSkeletonNode*>::iterator iterNext;
+	for (iter = m_spheres.begin(); iter != m_spheres.end(); iter++)
+	{
+		// set current sphere
+		current = *iter;
+
+		// set next sphere
+		iterNext = iter;
+		if ((iterNext != m_spheres.end()) && ((++iterNext) == m_spheres.end()))
+		{
+			next = *(m_spheres.begin());
+		}
+		else
+		{
+			next = *iterNext;
+		}
+
+		// calculate positions
+		cVector3d currentPos = current->m_pos;
+		cVector3d nextPos = next->m_pos;
+		cVector3d diff = nextPos - currentPos;
+		m_perimeter = m_perimeter + diff.length();
+	}
+
+	// set geometry perimeter as initial playdoh perimeter
+	m_geomPerimeter = m_perimeter;
+
+	// set large perimeter as twice that of the geom perimeter
+	m_largePerimeter = 2 * m_geomPerimeter;
+}
+
+void cGELPlaydoh::createNodeLinks()
+{
+	cGELPlaydohSkeletonNode* current;
+	cGELPlaydohSkeletonNode* next;
+	list<cGELPlaydohSkeletonNode*>::iterator iter;
+	list<cGELPlaydohSkeletonNode*>::iterator iterNext;
+	for (iter = m_spheres.begin(); iter != m_spheres.end(); iter++)
+	{
+		// dereference iterator
+		current = *iter;
+
+		// get next element in list
+		iterNext = iter;
+		if ((iterNext != m_spheres.end()) && ((++iterNext) == m_spheres.end()))
+		{
+			// points at the last element
+			//std::cout << "last element" << std::endl;
+
+			// create link between end and front spheres
+			cGELPlaydohSkeletonLink* newLink = new cGELPlaydohSkeletonLink(current, *(m_spheres.begin()));
+			m_mesh->m_links.push_back(newLink);
+		}
+		else
+		{
+			// dereference iterator
+			next = *iterNext;
+
+			// create link
+			cGELPlaydohSkeletonLink* newLink = new cGELPlaydohSkeletonLink(current, next);
+			m_mesh->m_links.push_back(newLink);
+		}
+	}
+
+}
+
+cVector3d cGELPlaydoh::computeNodeForce(const cVector3d& a_cursor,
+										double a_cursorRadius,
+										const cVector3d& a_spherePos,
+										double a_radius,
+										double a_stiffness)
+{
+
+	// compute the reaction forces between the tool and the ith sphere.
+	cVector3d force;
+	force.zero();
+	cVector3d vSphereCursor = a_cursor - a_spherePos;
+
+	// check if both objects are intersecting
+	if (vSphereCursor.length() < 0.0000001)
+	{
+		return (force);
+	}
+
+	if (vSphereCursor.length() > (a_cursorRadius + a_radius))
+	{
+		return (force);
+	}
+
+	// compute penetration distance between tool and surface of sphere
+	double penetrationDistance = (a_cursorRadius + a_radius) - vSphereCursor.length();
+	cVector3d forceDirection = cNormalize(vSphereCursor);
+	force = cMul(penetrationDistance * a_stiffness, forceDirection);
+
+	// return result
+	return (force);
+}
+
+cVector3d cGELPlaydoh::computeCylNodeForce(const cVector3d& a_cursor,
+	double a_cursorRadius,
+	const cVector3d& a_spherePos,
+	double a_radius,
+	double a_stiffness)
+{
+
+	// compute the reaction forces between the tool and the ith sphere.
+	cVector3d force;
+	force.zero();
+	cVector3d vSphereCursor = a_cursor - a_spherePos;
+
+	// project all vectors to the xy plane
+	double vHeight = vSphereCursor.z;
+	vSphereCursor.z = 0;
+
+	// check if both objects are intersecting
+	if (vSphereCursor.length() < 0.0000001)
+	{
+		return (force);
+	}
+
+	if (vSphereCursor.length() > (a_cursorRadius + a_radius))
+	{
+		return (force);
+	}
+
+	if (vHeight > 4*a_radius)
+	{
+		return(force);
+	}
+
+	// compute penetration distance between tool and surface of sphere
+	double penetrationDistance = (a_cursorRadius + a_radius) - vSphereCursor.length();
+	cVector3d forceDirection = cNormalize(vSphereCursor);
+	force = cMul(penetrationDistance * a_stiffness, forceDirection);
+
+	// return result
+	return (force);
+}

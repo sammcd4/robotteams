@@ -1,0 +1,27 @@
+ServerInput inputs/fourSmall.swarm
+numBuildings 4
+hqFeedFolder hqFeeds/fourSmall/
+CameraHeight 300
+DeviceWorkspaceScale 12.5
+SampleRate 1.0
+TargetRadius 0.2
+TargetFoundRadius 1.3
+TargetColor(rgba) 0.5 0.0 0.0 1.0
+TargetFoundColor(rgba) 0.0 0.5 0.0 1.0
+
+0 1 4.5 4.5 0
+0 1 9 9 0
+0 1 7 4 0
+0 1 4 10 0
+
+0 1 -4 2 0
+0 1 -10 4.5 0
+0 1 -5 10 0
+
+0 1 -10 -9.5 0
+0 1 -10 -4 0
+0 1 -5 -3 0
+
+0 1 7 -3 0
+0 1 10 -4 0
+0 1 7 -6 0

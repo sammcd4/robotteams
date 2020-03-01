@@ -1,0 +1,27 @@
+ServerInput inputs/practice.swarm
+timeLimitMin 6
+numBuildings 4
+polygonsPerBuilding 1 1 1 2
+bldg1Bounds 70 30 -50 -70
+bldg2Bounds 70 30 70 50
+bldg3Bounds -30 -70 -50 -70
+bldg4Bounds -30 -50 70 50
+hqFeedFolder hqFeeds/practice/
+CameraHeight 300
+DeviceWorkspaceScale 125
+SampleRate 0.1
+
+2 1 2 2 20 60 44 36 0
+2 1 2 2 20 60 33 49 0
+2 2 1 1 50 90 64 30 0
+2 3 1 1 80 120 82 70 0
+2 4 2 2 120 180 46 55 0
+2 4 2 2 120 180 46 68 0
+4 5 2 2 200 240 26 -33 0
+4 5 2 2 200 240 16 -47 0
+4 6 2 3 240 280 50 -28 0
+4 6 2 3 240 280 59 -28 0
+4 7 3 1 270 300 31 -12 0
+4 8 4 2 300 330 28 -43 0
+4 8 4 2 300 330 27 -30 0
+4 9 3 1 330 360 48 -56 0

@@ -1,0 +1,10 @@
+# This is a sample file giving all options.
+IARadius	10.0
+WallRadius	5 # should be cast to a float64
+	MaxAcc	0.01 # indent should be removed
+  MaxVel	0.05
+NumConns 20 # should be int
+
+Agents	5	<-15, 0, 0>	1	# <numAgents> <pos> <noise>
+Polygon	<0, 0, 0>	<10, 0, 0>	<0, 10, 0> # counter-clockwise
+Agents	5	<0, 15, 0>	0.5	# <numAgents> <pos> <noise>
